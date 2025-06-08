@@ -1,0 +1,477 @@
+"use client";
+
+import { useState, useEffect, type FormEvent, type ChangeEvent } from "react";
+import { useNavigate, useParams } from "react-router-dom";
+import { usePreguntas } from "../hooks/usePreguntas";
+import toast from "react-hot-toast";
+import type { Pregunta, Area } from "../types";
+import { Save, X, Calculator } from "lucide-react";
+
+const PreguntaForm = () => {
+  const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
+  const { preguntaByIdQuery, savePregunta, isSaving, preguntas } =
+    usePreguntas();
+  const { data: existingPregunta, isLoading } = preguntaByIdQuery(id);
+
+  const [formData, setFormData] = useState<Partial<Pregunta>>({
+    curso: "",
+    tema: "",
+    subtema: "",
+    area: "Biomédicas",
+    puntaje: 1.0,
+    competencia: "",
+    mensajeComplida: "",
+    mensajeNoComplida: "",
+  });
+
+  const [errors, setErrors] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    if (existingPregunta) {
+      setFormData({
+        id: existingPregunta.id,
+        curso: existingPregunta.curso || "",
+        tema: existingPregunta.tema || "",
+        subtema: existingPregunta.subtema || "",
+        area: existingPregunta.area || "Biomédicas",
+        puntaje: existingPregunta.puntaje || 1.0,
+        competencia: existingPregunta.competencia || "",
+        mensajeComplida: existingPregunta.mensajeComplida || "",
+        mensajeNoComplida: existingPregunta.mensajeNoComplida || "",
+      });
+    }
+  }, [existingPregunta]);
+
+  // Calcular el total de puntajes actuales
+  const calcularTotalPuntajes = () => {
+    const preguntasExistentes = preguntas.filter((p) => p.id !== formData.id);
+    const totalExistente = preguntasExistentes.reduce(
+      (sum, p) => sum + p.puntaje,
+      0
+    );
+    const puntajeActual = formData.puntaje || 0;
+    return totalExistente + puntajeActual;
+  };
+
+  const validateForm = (): boolean => {
+    const newErrors: Record<string, string> = {};
+
+    if (!formData.curso) newErrors.curso = "El curso es requerido";
+    if (!formData.tema) newErrors.tema = "El tema es requerido";
+    if (!formData.subtema) newErrors.subtema = "El subtema es requerido";
+    if (!formData.competencia)
+      newErrors.competencia = "La competencia es requerida";
+    if (!formData.mensajeComplida)
+      newErrors.mensajeComplida =
+        "El mensaje de competencia cumplida es requerido";
+    if (!formData.mensajeNoComplida)
+      newErrors.mensajeNoComplida =
+        "El mensaje de competencia no cumplida es requerido";
+
+    // Validar puntaje
+    if (!formData.puntaje || formData.puntaje <= 0) {
+      newErrors.puntaje = "El puntaje debe ser mayor a 0";
+    } else {
+      const totalPuntajes = calcularTotalPuntajes();
+      if (totalPuntajes > 100) {
+        newErrors.puntaje = `El total de puntajes no puede exceder 100. Total actual: ${totalPuntajes.toFixed(
+          2
+        )}`;
+      }
+    }
+
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  };
+
+  const handleChange = (
+    e: ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>
+  ) => {
+    const { name, value } = e.target;
+    setFormData((prev) => ({
+      ...prev,
+      [name]: name === "puntaje" ? Number.parseFloat(value) || 0 : value,
+    }));
+
+    // Limpiar error del campo
+    if (errors[name]) {
+      setErrors((prev) => ({
+        ...prev,
+        [name]: "",
+      }));
+    }
+  };
+
+  const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+
+    if (!validateForm()) {
+      toast.error("Por favor, corrige los errores en el formulario");
+      return;
+    }
+
+    try {
+      const preguntaData: Partial<Pregunta> = {
+        ...formData,
+        area: formData.area as Area,
+      };
+
+      savePregunta(preguntaData);
+      navigate("/preguntas");
+    } catch (error) {
+      console.error("Error al guardar pregunta:", error);
+      toast.error(
+        error instanceof Error ? error.message : "Error al guardar pregunta"
+      );
+    }
+  };
+
+  if (id && isLoading) {
+    return (
+      <div className="flex justify-center items-center h-64">
+        <div className="h-12 w-12 animate-spin rounded-full border-b-2 border-t-2 border-primary"></div>
+      </div>
+    );
+  }
+
+  const totalPuntajes = calcularTotalPuntajes();
+  const puntajeRestante = 100 - totalPuntajes;
+
+  return (
+    <div className="max-w-7xl mx-auto">
+      <div className="md:grid md:grid-cols-3 md:gap-6">
+        <div className="md:col-span-1">
+          <div className="px-4 sm:px-0">
+            <h3 className="text-lg font-medium leading-6 text-gray-900">
+              {id ? "Editar Pregunta" : "Nueva Pregunta"}
+            </h3>
+            <p className="mt-1 text-sm text-gray-600">
+              {id
+                ? "Actualiza la información de la pregunta"
+                : "Completa la información para crear una nueva pregunta"}
+            </p>
+
+            {/* Información de puntajes */}
+            <div className="mt-6 p-4 bg-blue-50 rounded-lg">
+              <h4 className="text-sm font-medium text-blue-900 flex items-center">
+                <Calculator className="h-4 w-4 mr-2" />
+                Control de Puntajes
+              </h4>
+              <div className="mt-2 space-y-2">
+                <div className="flex justify-between text-sm">
+                  <span className="text-blue-700">Total actual:</span>
+                  <span className="font-semibold text-blue-900">
+                    {totalPuntajes.toFixed(2)} / 100
+                  </span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-blue-700">Disponible:</span>
+                  <span
+                    className={`font-semibold ${
+                      puntajeRestante < 0 ? "text-red-600" : "text-green-600"
+                    }`}
+                  >
+                    {puntajeRestante.toFixed(2)}
+                  </span>
+                </div>
+                <div className="w-full bg-blue-200 rounded-full h-2">
+                  <div
+                    className={`h-2 rounded-full transition-all duration-300 ${
+                      totalPuntajes > 100
+                        ? "bg-red-500"
+                        : totalPuntajes === 100
+                        ? "bg-green-500"
+                        : "bg-blue-600"
+                    }`}
+                    style={{
+                      width: `${Math.min((totalPuntajes / 100) * 100, 100)}%`,
+                    }}
+                  ></div>
+                </div>
+                {totalPuntajes > 100 && (
+                  <p className="text-xs text-red-600 mt-1">
+                    ⚠️ El total excede 100 puntos
+                  </p>
+                )}
+                {totalPuntajes === 100 && (
+                  <p className="text-xs text-green-600 mt-1">
+                    ✅ Total completo: 100 puntos
+                  </p>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+        <div className="mt-5 md:mt-0 md:col-span-2">
+          <form onSubmit={handleSubmit}>
+            <div className="shadow overflow-hidden rounded-lg">
+              <div className="px-4 py-5 bg-white sm:p-6 space-y-6">
+                {/* Información básica */}
+                <div className="grid grid-cols-6 gap-6">
+                  <div className="col-span-6 sm:col-span-2">
+                    <label
+                      htmlFor="curso"
+                      className="block text-sm font-medium text-gray-700"
+                    >
+                      Curso *
+                    </label>
+                    <input
+                      type="text"
+                      name="curso"
+                      id="curso"
+                      value={formData.curso || ""}
+                      onChange={handleChange}
+                      className={`mt-1 focus:ring-blue-500 focus:border-blue-500 block w-full shadow-sm sm:text-sm border-gray-300 rounded-md ${
+                        errors.curso ? "border-red-500" : ""
+                      }`}
+                      placeholder="Ej: Matemática"
+                    />
+                    {errors.curso && (
+                      <p className="mt-1 text-sm text-red-600">
+                        {errors.curso}
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="col-span-6 sm:col-span-2">
+                    <label
+                      htmlFor="area"
+                      className="block text-sm font-medium text-gray-700"
+                    >
+                      Área *
+                    </label>
+                    <select
+                      name="area"
+                      id="area"
+                      value={formData.area || "Biomédicas"}
+                      onChange={handleChange}
+                      className="mt-1 focus:ring-blue-500 focus:border-blue-500 block w-full shadow-sm sm:text-sm border-gray-300 rounded-md"
+                    >
+                      <option value="Biomédicas">Biomédicas</option>
+                      <option value="Ingenierías">Ingenierías</option>
+                      <option value="Sociales">Sociales</option>
+                    </select>
+                  </div>
+
+                  <div className="col-span-6 sm:col-span-2">
+                    <label
+                      htmlFor="puntaje"
+                      className="block text-sm font-medium text-gray-700"
+                    >
+                      Puntaje *
+                    </label>
+                    <input
+                      type="number"
+                      name="puntaje"
+                      id="puntaje"
+                      min="0.1"
+                      max="100"
+                      step="0.1"
+                      value={formData.puntaje || 1.0}
+                      onChange={handleChange}
+                      className={`mt-1 focus:ring-blue-500 focus:border-blue-500 block w-full shadow-sm sm:text-sm border-gray-300 rounded-md ${
+                        errors.puntaje ? "border-red-500" : ""
+                      }`}
+                    />
+                    {errors.puntaje && (
+                      <p className="mt-1 text-sm text-red-600">
+                        {errors.puntaje}
+                      </p>
+                    )}
+                    <p className="mt-1 text-xs text-gray-500">
+                      El total de todas las preguntas debe sumar exactamente 100
+                      puntos
+                    </p>
+                  </div>
+
+                  <div className="col-span-6 sm:col-span-3">
+                    <label
+                      htmlFor="tema"
+                      className="block text-sm font-medium text-gray-700"
+                    >
+                      Tema *
+                    </label>
+                    <input
+                      type="text"
+                      name="tema"
+                      id="tema"
+                      value={formData.tema || ""}
+                      onChange={handleChange}
+                      className={`mt-1 focus:ring-blue-500 focus:border-blue-500 block w-full shadow-sm sm:text-sm border-gray-300 rounded-md ${
+                        errors.tema ? "border-red-500" : ""
+                      }`}
+                      placeholder="Ej: Álgebra"
+                    />
+                    {errors.tema && (
+                      <p className="mt-1 text-sm text-red-600">{errors.tema}</p>
+                    )}
+                  </div>
+
+                  <div className="col-span-6 sm:col-span-3">
+                    <label
+                      htmlFor="subtema"
+                      className="block text-sm font-medium text-gray-700"
+                    >
+                      Subtema *
+                    </label>
+                    <input
+                      type="text"
+                      name="subtema"
+                      id="subtema"
+                      value={formData.subtema || ""}
+                      onChange={handleChange}
+                      className={`mt-1 focus:ring-blue-500 focus:border-blue-500 block w-full shadow-sm sm:text-sm border-gray-300 rounded-md ${
+                        errors.subtema ? "border-red-500" : ""
+                      }`}
+                      placeholder="Ej: Ecuaciones lineales"
+                    />
+                    {errors.subtema && (
+                      <p className="mt-1 text-sm text-red-600">
+                        {errors.subtema}
+                      </p>
+                    )}
+                  </div>
+                </div>
+
+                {/* Competencia */}
+                <div>
+                  <label
+                    htmlFor="competencia"
+                    className="block text-sm font-medium text-gray-700"
+                  >
+                    Competencia *
+                  </label>
+                  <textarea
+                    name="competencia"
+                    id="competencia"
+                    rows={3}
+                    value={formData.competencia || ""}
+                    onChange={handleChange}
+                    className={`mt-1 focus:ring-blue-500 focus:border-blue-500 block w-full shadow-sm sm:text-sm border-gray-300 rounded-md ${
+                      errors.competencia ? "border-red-500" : ""
+                    }`}
+                    placeholder="Describe la competencia que evalúa esta pregunta..."
+                  />
+                  {errors.competencia && (
+                    <p className="mt-1 text-sm text-red-600">
+                      {errors.competencia}
+                    </p>
+                  )}
+                </div>
+
+                {/* Mensajes de competencia */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div>
+                    <label
+                      htmlFor="mensajeComplida"
+                      className="block text-sm font-medium text-gray-700"
+                    >
+                      Mensaje - Competencia Cumplida *
+                    </label>
+                    <textarea
+                      name="mensajeComplida"
+                      id="mensajeComplida"
+                      rows={4}
+                      value={formData.mensajeComplida || ""}
+                      onChange={handleChange}
+                      className={`mt-1 focus:ring-blue-500 focus:border-blue-500 block w-full shadow-sm sm:text-sm border-gray-300 rounded-md ${
+                        errors.mensajeComplida ? "border-red-500" : ""
+                      }`}
+                      placeholder="Mensaje que se mostrará cuando el estudiante responda correctamente..."
+                    />
+                    {errors.mensajeComplida && (
+                      <p className="mt-1 text-sm text-red-600">
+                        {errors.mensajeComplida}
+                      </p>
+                    )}
+                  </div>
+
+                  <div>
+                    <label
+                      htmlFor="mensajeNoComplida"
+                      className="block text-sm font-medium text-gray-700"
+                    >
+                      Mensaje - Competencia No Cumplida *
+                    </label>
+                    <textarea
+                      name="mensajeNoComplida"
+                      id="mensajeNoComplida"
+                      rows={4}
+                      value={formData.mensajeNoComplida || ""}
+                      onChange={handleChange}
+                      className={`mt-1 focus:ring-blue-500 focus:border-blue-500 block w-full shadow-sm sm:text-sm border-gray-300 rounded-md ${
+                        errors.mensajeNoComplida ? "border-red-500" : ""
+                      }`}
+                      placeholder="Mensaje que se mostrará cuando el estudiante responda incorrectamente..."
+                    />
+                    {errors.mensajeNoComplida && (
+                      <p className="mt-1 text-sm text-red-600">
+                        {errors.mensajeNoComplida}
+                      </p>
+                    )}
+                  </div>
+                </div>
+
+                {/* Nota informativa */}
+                <div className="bg-yellow-50 border border-yellow-200 rounded-md p-4">
+                  <div className="flex">
+                    <div className="flex-shrink-0">
+                      <svg
+                        className="h-5 w-5 text-yellow-400"
+                        viewBox="0 0 20 20"
+                        fill="currentColor"
+                      >
+                        <path
+                          fillRule="evenodd"
+                          d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z"
+                          clipRule="evenodd"
+                        />
+                      </svg>
+                    </div>
+                    <div className="ml-3">
+                      <h3 className="text-sm font-medium text-yellow-800">
+                        Información importante
+                      </h3>
+                      <div className="mt-2 text-sm text-yellow-700">
+                        <p>
+                          • El enunciado y las alternativas de la pregunta se
+                          agregarán posteriormente
+                          <br />• Los puntajes deben sumar exactamente 100
+                          puntos entre todas las preguntas
+                          <br />• Los mensajes de competencia se mostrarán en la
+                          retroalimentación del estudiante
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="px-4 py-3 bg-gray-50 text-right sm:px-6">
+                <button
+                  type="button"
+                  onClick={() => navigate("/preguntas")}
+                  className="btn btn-secondary mr-3 inline-flex items-center"
+                >
+                  <X size={18} className="mr-2" />
+                  <span>Cancelar</span>
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSaving}
+                  className="btn btn-primary inline-flex items-center"
+                >
+                  <Save size={18} className="mr-2" />
+                  <span>{isSaving ? "Guardando..." : "Guardar"}</span>
+                </button>
+              </div>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default PreguntaForm;

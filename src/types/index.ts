@@ -58,28 +58,17 @@ export interface Postulante {
 // Áreas disponibles
 export type Area = "Biomédicas" | "Ingenierías" | "Sociales";
 
-// Competencia
-export interface Competencia {
-  id: string;
-  nombre: string;
-  descripcion: string;
-  mensajeComplida: string;
-  mensajeNoComplida: string;
-}
-
-// Pregunta
+// Pregunta (ACTUALIZADA)
 export interface Pregunta {
   id: string;
   curso: string;
   tema: string;
   subtema: string;
   area: Area;
-  puntaje: number;
-  competenciaId: string;
-  competencia?: Competencia; // Populated field
-  enunciado: string;
-  alternativas: string[]; // Array de 5 alternativas (A, B, C, D, E)
-  respuestaCorrecta: number; // Índice de la respuesta correcta (0-4)
+  puntaje: number; // Decimal que sumado con todas las preguntas debe dar 100
+  competencia: string; // Texto literal de la competencia
+  mensajeComplida: string; // Mensaje cuando la competencia se cumple
+  mensajeNoComplida: string; // Mensaje cuando la competencia no se cumple
   createdAt: string;
   createdBy: string;
 }
@@ -90,13 +79,20 @@ export interface MatrizConformacion {
   cantidad: number;
 }
 
-// Examen Simulacro
+// Mapeo de pregunta con su número en el examen
+export interface PreguntaEnExamen {
+  preguntaId: string;
+  numero: number; // Número de la pregunta en el examen (1-80)
+}
+
+// Examen Simulacro (ACTUALIZADO)
 export interface ExamenSimulacro {
   id: string;
   nombre: string;
   proceso: string;
   area: Area;
-  preguntas: string[]; // Array de IDs de preguntas (80 preguntas)
+  preguntas: string[]; // Array de IDs de preguntas (80 preguntas) - MANTENER PARA COMPATIBILIDAD
+  preguntasOrdenadas: PreguntaEnExamen[]; // Array con orden específico de preguntas
   preguntasData?: Pregunta[]; // Populated field
   matrizConformacion: MatrizConformacion[]; // Cuántas preguntas por curso
   estado: "construccion" | "listo";
