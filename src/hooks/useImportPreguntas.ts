@@ -1,34 +1,32 @@
 "use client";
 
 import { useState } from "react";
-import { collection, writeBatch, doc } from "firebase/firestore";
+import {
+  doc,
+  updateDoc,
+  arrayUnion,
+  writeBatch,
+  collection,
+} from "firebase/firestore";
 import { db } from "../firebase/config";
 import { useAuth } from "./useAuth";
 import { useQueryClient } from "@tanstack/react-query";
-import type { Pregunta } from "../types";
+import type { Pregunta, PreguntaEnExamen } from "../types";
 import toast from "react-hot-toast";
 
 interface ImportResult {
-  success: number;
-  errors: Array<{ index: number; error: string; data?: any }>;
+  exitosos: number;
+  errores: number;
   total: number;
-}
-
-interface ImportProgress {
-  current: number;
-  total: number;
-  percentage: number;
+  detalles: Array<{ fila: number; error: string }>;
 }
 
 export const useImportPreguntas = () => {
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const [isImporting, setIsImporting] = useState(false);
-  const [progress, setProgress] = useState<ImportProgress>({
-    current: 0,
-    total: 0,
-    percentage: 0,
-  });
+  const [progress, setProgress] = useState(0);
+  const [results, setResults] = useState<ImportResult | null>(null);
 
   const validatePregunta = (
     pregunta: any,
@@ -36,15 +34,35 @@ export const useImportPreguntas = () => {
   ): { isValid: boolean; errors: string[] } => {
     const errors: string[] = [];
 
+    const cursosValidos = [
+      "Biología",
+      "Cívica",
+      "Filosofía",
+      "Física",
+      "Geografía",
+      "Historia",
+      "Inglés - Lectura",
+      "Inglés - Gramática",
+      "Lenguaje",
+      "Literatura",
+      "Matemática - Aritmética",
+      "Matemática - Algebra",
+      "Matemática - Geometría",
+      "Matemática - Trigonometría",
+      "Psicología",
+      "Química",
+      "Razonamiento Lógico",
+      "Razonamiento Matemático",
+      "Comprensión Lectora",
+      "Razonamiento Verbal",
+    ];
+
     // Validaciones requeridas
-    if (!pregunta.curso || typeof pregunta.curso !== "string") {
-      errors.push("Campo 'curso' es requerido y debe ser texto");
+    if (!pregunta.curso || !cursosValidos.includes(pregunta.curso)) {
+      errors.push(`Campo 'curso' debe ser uno de: ${cursosValidos.join(", ")}`);
     }
     if (!pregunta.tema || typeof pregunta.tema !== "string") {
       errors.push("Campo 'tema' es requerido y debe ser texto");
-    }
-    if (!pregunta.subtema || typeof pregunta.subtema !== "string") {
-      errors.push("Campo 'subtema' es requerido y debe ser texto");
     }
     if (
       !pregunta.area ||
@@ -53,6 +71,12 @@ export const useImportPreguntas = () => {
       errors.push(
         "Campo 'area' debe ser: 'Biomédicas', 'Ingenierías' o 'Sociales'"
       );
+    }
+    if (
+      !pregunta.nivelCognitivo ||
+      typeof pregunta.nivelCognitivo !== "string"
+    ) {
+      errors.push("Campo 'nivelCognitivo' es requerido y debe ser texto");
     }
     if (!pregunta.competencia || typeof pregunta.competencia !== "string") {
       errors.push("Campo 'competencia' es requerido y debe ser texto");
@@ -75,6 +99,16 @@ export const useImportPreguntas = () => {
       errors.push("Campo 'puntaje' debe ser un número mayor a 0");
     }
 
+    // Validación de alternativa correcta
+    if (
+      !pregunta.alternativaCorrecta ||
+      !["A", "B", "C", "D", "E"].includes(pregunta.alternativaCorrecta)
+    ) {
+      errors.push(
+        "Campo 'alternativaCorrecta' debe ser: 'A', 'B', 'C', 'D' o 'E'"
+      );
+    }
+
     return {
       isValid: errors.length === 0,
       errors,
@@ -82,10 +116,13 @@ export const useImportPreguntas = () => {
   };
 
   const validateTotalPuntajes = (
-    preguntas: any[],
+    preguntasNuevas: any[],
     preguntasExistentes: Pregunta[]
   ): boolean => {
-    const totalNuevas = preguntas.reduce((sum, p) => sum + (p.puntaje || 0), 0);
+    const totalNuevas = preguntasNuevas.reduce(
+      (sum, p) => sum + (p.puntaje || 0),
+      0
+    );
     const totalExistentes = preguntasExistentes.reduce(
       (sum, p) => sum + p.puntaje,
       0
@@ -93,17 +130,28 @@ export const useImportPreguntas = () => {
     return totalNuevas + totalExistentes <= 100;
   };
 
-  const importPreguntas = async (
+  const validateAreaConsistencia = (
+    preguntasNuevas: any[],
+    areaExamen: string
+  ): boolean => {
+    return preguntasNuevas.every((pregunta) => pregunta.area === areaExamen);
+  };
+
+  const importPreguntasToExamen = async (
     preguntasData: any[],
+    examenId: string,
+    areaExamen: string,
     preguntasExistentes: Pregunta[]
-  ): Promise<ImportResult> => {
+  ): Promise<void> => {
     setIsImporting(true);
-    setProgress({ current: 0, total: preguntasData.length, percentage: 0 });
+    setProgress(0);
+    setResults(null);
 
     const result: ImportResult = {
-      success: 0,
-      errors: [],
+      exitosos: 0,
+      errores: 0,
       total: preguntasData.length,
+      detalles: [],
     };
 
     try {
@@ -123,13 +171,20 @@ export const useImportPreguntas = () => {
         if (validation.isValid) {
           preguntasValidas.push(pregunta);
         } else {
-          result.errors.push({
-            index: index + 1,
+          result.errores++;
+          result.detalles.push({
+            fila: index + 1,
             error: validation.errors.join(", "),
-            data: pregunta,
           });
         }
       });
+
+      // Validar consistencia de área
+      if (!validateAreaConsistencia(preguntasValidas, areaExamen)) {
+        throw new Error(
+          `Todas las preguntas deben pertenecer al área "${areaExamen}" del examen`
+        );
+      }
 
       // Validar total de puntajes
       if (!validateTotalPuntajes(preguntasValidas, preguntasExistentes)) {
@@ -143,63 +198,131 @@ export const useImportPreguntas = () => {
         );
         throw new Error(
           `El total de puntajes excedería 100. Existentes: ${totalExistentes.toFixed(
-            1
-          )}, Nuevas: ${totalNuevas.toFixed(1)}, Total: ${(
+            8
+          )}, Nuevas: ${totalNuevas.toFixed(8)}, Total: ${(
             totalExistentes + totalNuevas
-          ).toFixed(1)}`
+          ).toFixed(8)}`
         );
       }
 
-      // Importar en lotes (Firebase permite máximo 500 operaciones por batch)
-      const batchSize = 500;
-      const batches = [];
-
-      for (let i = 0; i < preguntasValidas.length; i += batchSize) {
-        const batch = writeBatch(db);
-        const batchPreguntas = preguntasValidas.slice(i, i + batchSize);
-
-        batchPreguntas.forEach((pregunta) => {
-          const docRef = doc(collection(db, "preguntas"));
-          batch.set(docRef, {
-            curso: pregunta.curso,
-            tema: pregunta.tema,
-            subtema: pregunta.subtema,
-            area: pregunta.area,
-            puntaje: pregunta.puntaje,
-            competencia: pregunta.competencia,
-            mensajeComplida: pregunta.mensajeComplida,
-            mensajeNoComplida: pregunta.mensajeNoComplida,
-            createdAt: new Date().toISOString(),
-            createdBy: user?.email || "system",
-          });
-        });
-
-        batches.push({ batch, count: batchPreguntas.length });
+      // Validar que no exceda 80 preguntas
+      const totalPreguntas =
+        preguntasExistentes.length + preguntasValidas.length;
+      if (totalPreguntas > 80) {
+        throw new Error(
+          `El examen no puede tener más de 80 preguntas. Existentes: ${preguntasExistentes.length}, Nuevas: ${preguntasValidas.length}, Total: ${totalPreguntas}`
+        );
       }
 
-      // Ejecutar todos los batches
-      let processedCount = 0;
-      for (const { batch, count } of batches) {
-        await batch.commit();
-        processedCount += count;
-        result.success += count;
+      // Crear las preguntas con IDs únicos y agregarlas tanto al examen como a la colección general
+      const preguntasParaAgregar: Pregunta[] = [];
+      const preguntasOrdenadas: PreguntaEnExamen[] = [];
+
+      // Crear batch para la colección de preguntas
+      const batch = writeBatch(db);
+
+      preguntasValidas.forEach((pregunta, index) => {
+        const preguntaId = `${examenId}_pregunta_${Date.now()}_${index}`;
+        const numeroOrden = preguntasExistentes.length + index + 1;
+
+        const nuevaPregunta: Pregunta = {
+          id: preguntaId,
+          curso: pregunta.curso,
+          tema: pregunta.tema,
+          area: pregunta.area,
+          nivelCognitivo: pregunta.nivelCognitivo,
+          puntaje: pregunta.puntaje, // Mantener el valor original sin redondeo
+          competencia: pregunta.competencia,
+          mensajeComplida: pregunta.mensajeComplida,
+          mensajeNoComplida: pregunta.mensajeNoComplida,
+          alternativaCorrecta: pregunta.alternativaCorrecta,
+          createdAt: new Date().toISOString(),
+          createdBy: user?.email || "system",
+        };
+
+        preguntasParaAgregar.push(nuevaPregunta);
+        preguntasOrdenadas.push({
+          preguntaId: preguntaId,
+          numero: numeroOrden,
+        });
+
+        // Agregar a la colección general de preguntas
+        const preguntaRef = doc(collection(db, "preguntas"), preguntaId);
+        batch.set(preguntaRef, nuevaPregunta);
 
         // Actualizar progreso
-        setProgress({
-          current: processedCount,
-          total: preguntasValidas.length,
-          percentage: Math.round(
-            (processedCount / preguntasValidas.length) * 100
-          ),
-        });
-      }
+        const progressPercentage = Math.round(
+          ((index + 1) / preguntasValidas.length) * 100
+        );
+        setProgress(progressPercentage);
+      });
 
-      // Invalidar cache para refrescar la lista
+      // Ejecutar batch para crear preguntas en la colección general
+      await batch.commit();
+
+      // Actualizar el documento del examen
+      const examenRef = doc(db, "examenes", examenId);
+
+      // Calcular nueva matriz de conformación
+      const matrizPorCurso: Record<string, number> = {};
+
+      // Contar preguntas existentes
+      preguntasExistentes.forEach((pregunta) => {
+        matrizPorCurso[pregunta.curso] =
+          (matrizPorCurso[pregunta.curso] || 0) + 1;
+      });
+
+      // Contar preguntas nuevas
+      preguntasParaAgregar.forEach((pregunta) => {
+        matrizPorCurso[pregunta.curso] =
+          (matrizPorCurso[pregunta.curso] || 0) + 1;
+      });
+
+      const nuevaMatriz = Object.entries(matrizPorCurso).map(
+        ([curso, cantidad]) => ({
+          curso,
+          cantidad,
+        })
+      );
+
+      // Obtener preguntas ordenadas existentes
+      const preguntasOrdenadaExistentes = preguntasExistentes.map(
+        (pregunta, index) => ({
+          preguntaId: pregunta.id,
+          numero: index + 1,
+        })
+      );
+
+      const todasLasPreguntasOrdenadas = [
+        ...preguntasOrdenadaExistentes,
+        ...preguntasOrdenadas,
+      ];
+      const todosLosIds = [
+        ...preguntasExistentes.map((p) => p.id),
+        ...preguntasParaAgregar.map((p) => p.id),
+      ];
+
+      await updateDoc(examenRef, {
+        preguntasData: arrayUnion(...preguntasParaAgregar),
+        preguntasOrdenadas: todasLasPreguntasOrdenadas,
+        preguntas: todosLosIds,
+        matrizConformacion: nuevaMatriz,
+        estado:
+          todasLasPreguntasOrdenadas.length === 80 ? "listo" : "construccion",
+      });
+
+      result.exitosos = preguntasValidas.length;
+
+      // Invalidar cache para refrescar las listas
+      queryClient.invalidateQueries({ queryKey: ["examenes"] });
+      queryClient.invalidateQueries({ queryKey: ["examen", examenId] });
       queryClient.invalidateQueries({ queryKey: ["preguntas"] });
 
       toast.success(
-        `Importación completada: ${result.success} preguntas importadas${
-          result.errors.length > 0 ? `, ${result.errors.length} errores` : ""
+        `Importación completada: ${
+          result.exitosos
+        } preguntas agregadas al examen y al banco de preguntas${
+          result.errores > 0 ? `, ${result.errores} errores` : ""
         }`
       );
     } catch (error) {
@@ -209,21 +332,132 @@ export const useImportPreguntas = () => {
           ? error.message
           : "Error desconocido en la importación";
       toast.error(errorMessage);
-      result.errors.push({
-        index: 0,
+      result.detalles.push({
+        fila: 0,
         error: errorMessage,
       });
+      result.errores++;
     } finally {
       setIsImporting(false);
-      setProgress({ current: 0, total: 0, percentage: 0 });
+      setResults(result);
     }
+  };
 
-    return result;
+  const importPreguntasToBanco = async (
+    preguntasData: any[]
+  ): Promise<void> => {
+    setIsImporting(true);
+    setProgress(0);
+    setResults(null);
+
+    const result: ImportResult = {
+      exitosos: 0,
+      errores: 0,
+      total: preguntasData.length,
+      detalles: [],
+    };
+
+    try {
+      // Validar formato del array
+      if (!Array.isArray(preguntasData)) {
+        throw new Error("El archivo debe contener un array de preguntas");
+      }
+
+      if (preguntasData.length === 0) {
+        throw new Error("El archivo no contiene preguntas");
+      }
+
+      // Validar cada pregunta (sin restricciones de área, puntaje o cantidad)
+      const preguntasValidas: any[] = [];
+      preguntasData.forEach((pregunta, index) => {
+        const validation = validatePregunta(pregunta, index);
+        if (validation.isValid) {
+          preguntasValidas.push(pregunta);
+        } else {
+          result.errores++;
+          result.detalles.push({
+            fila: index + 1,
+            error: validation.errors.join(", "),
+          });
+        }
+      });
+
+      // Crear batch para la colección de preguntas
+      const batch = writeBatch(db);
+
+      preguntasValidas.forEach((pregunta, index) => {
+        const preguntaId = `banco_pregunta_${Date.now()}_${index}`;
+
+        const nuevaPregunta: Pregunta = {
+          id: preguntaId,
+          curso: pregunta.curso,
+          tema: pregunta.tema,
+          area: pregunta.area,
+          nivelCognitivo: pregunta.nivelCognitivo,
+          puntaje: pregunta.puntaje,
+          competencia: pregunta.competencia,
+          mensajeComplida: pregunta.mensajeComplida,
+          mensajeNoComplida: pregunta.mensajeNoComplida,
+          alternativaCorrecta: pregunta.alternativaCorrecta,
+          createdAt: new Date().toISOString(),
+          createdBy: user?.email || "system",
+        };
+
+        // Agregar a la colección general de preguntas
+        const preguntaRef = doc(collection(db, "preguntas"), preguntaId);
+        batch.set(preguntaRef, nuevaPregunta);
+
+        // Actualizar progreso
+        const progressPercentage = Math.round(
+          ((index + 1) / preguntasValidas.length) * 100
+        );
+        setProgress(progressPercentage);
+      });
+
+      // Ejecutar batch para crear preguntas en la colección general
+      await batch.commit();
+
+      result.exitosos = preguntasValidas.length;
+
+      // Invalidar cache para refrescar la lista de preguntas
+      queryClient.invalidateQueries({ queryKey: ["preguntas"] });
+
+      toast.success(
+        `Importación completada: ${
+          result.exitosos
+        } preguntas agregadas al banco de preguntas${
+          result.errores > 0 ? `, ${result.errores} errores` : ""
+        }`
+      );
+    } catch (error) {
+      console.error("Error en importación:", error);
+      const errorMessage =
+        error instanceof Error
+          ? error.message
+          : "Error desconocido en la importación";
+      toast.error(errorMessage);
+      result.detalles.push({
+        fila: 0,
+        error: errorMessage,
+      });
+      result.errores++;
+    } finally {
+      setIsImporting(false);
+      setResults(result);
+    }
+  };
+
+  const resetResults = () => {
+    setResults(null);
+    setProgress(0);
   };
 
   return {
-    importPreguntas,
+    importPreguntasToExamen,
+    importPreguntasToBanco,
     isImporting,
     progress,
+    results,
+    resetResults,
   };
 };

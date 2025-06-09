@@ -1,40 +1,54 @@
 "use client";
 
-import { useState, useRef, type DragEvent, type ChangeEvent } from "react";
+import { useState, useRef, type ChangeEvent, type DragEvent } from "react";
 import { useImportPreguntas } from "../hooks/useImportPreguntas";
-import { usePreguntas } from "../hooks/usePreguntas";
+import type { Pregunta, Area, Alternativa, Curso } from "../types";
 import {
   X,
   Upload,
-  FileText,
-  AlertCircle,
-  CheckCircle,
   Download,
+  FileText,
+  CheckCircle,
+  XCircle,
+  AlertCircle,
 } from "lucide-react";
 
 interface ImportPreguntasModalProps {
   isOpen: boolean;
   onClose: () => void;
-}
-
-interface ImportResult {
-  success: number;
-  errors: Array<{ index: number; error: string; data?: any }>;
-  total: number;
+  examenId?: string; // Opcional para modo banco
+  areaExamen?: Area; // Opcional para modo banco
+  preguntasExistentes?: Pregunta[]; // Opcional para modo banco
+  modo?: "examen" | "banco"; // Nuevo prop para determinar el modo
 }
 
 const ImportPreguntasModal = ({
   isOpen,
   onClose,
+  examenId,
+  areaExamen,
+  preguntasExistentes = [],
+  modo = "banco", // Por defecto modo banco
 }: ImportPreguntasModalProps) => {
-  const { importPreguntas, isImporting, progress } = useImportPreguntas();
-  const { preguntas } = usePreguntas();
+  const {
+    importPreguntasToExamen,
+    importPreguntasToBanco,
+    isImporting,
+    progress,
+    results,
+  } = useImportPreguntas();
   const [dragActive, setDragActive] = useState(false);
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [importResult, setImportResult] = useState<ImportResult | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const handleDrag = (e: DragEvent) => {
+  // Calcular puntaje disponible del examen específico
+  const puntajeUsado = preguntasExistentes.reduce(
+    (sum, p) => sum + p.puntaje,
+    0
+  );
+  const puntajeDisponible = 100 - puntajeUsado;
+  const preguntasDisponibles = 80 - preguntasExistentes.length;
+
+  const handleDrag = (e: DragEvent<HTMLDivElement>) => {
     e.preventDefault();
     e.stopPropagation();
     if (e.type === "dragenter" || e.type === "dragover") {
@@ -44,7 +58,7 @@ const ImportPreguntasModal = ({
     }
   };
 
-  const handleDrop = (e: DragEvent) => {
+  const handleDrop = (e: DragEvent<HTMLDivElement>) => {
     e.preventDefault();
     e.stopPropagation();
     setDragActive(false);
@@ -60,60 +74,122 @@ const ImportPreguntasModal = ({
     }
   };
 
-  const handleFile = (file: File) => {
+  const handleFile = async (file: File) => {
     if (file.type !== "application/json") {
-      alert("Por favor selecciona un archivo JSON válido");
+      alert("Por favor, selecciona un archivo JSON válido");
       return;
     }
-    setSelectedFile(file);
-    setImportResult(null);
-  };
-
-  const processImport = async () => {
-    if (!selectedFile) return;
 
     try {
-      const text = await selectedFile.text();
+      const text = await file.text();
       const data = JSON.parse(text);
-      const result = await importPreguntas(data, preguntas);
-      setImportResult(result);
+
+      if (modo === "examen" && examenId && areaExamen) {
+        await importPreguntasToExamen(
+          data,
+          examenId,
+          areaExamen,
+          preguntasExistentes
+        );
+      } else {
+        await importPreguntasToBanco(data);
+      }
     } catch (error) {
-      alert(
-        "Error al procesar el archivo JSON: " +
-          (error instanceof Error ? error.message : "Error desconocido")
-      );
+      console.error("Error al procesar archivo:", error);
+      alert("Error al procesar el archivo JSON");
     }
   };
 
-  const downloadTemplate = () => {
-    const template = [
-      {
-        curso: "Matemática",
-        tema: "Álgebra",
-        subtema: "Ecuaciones lineales",
-        area: "Ingenierías",
-        puntaje: 1.5,
-        competencia:
-          "Resuelve problemas de ecuaciones lineales aplicando propiedades algebraicas",
-        mensajeComplida:
-          "¡Excelente! Dominas la resolución de ecuaciones lineales.",
-        mensajeNoComplida:
-          "Necesitas reforzar los conceptos de ecuaciones lineales y sus propiedades.",
-      },
-      {
-        curso: "Biología",
-        tema: "Célula",
-        subtema: "Organelos celulares",
-        area: "Biomédicas",
-        puntaje: 2.0,
-        competencia:
-          "Identifica y describe las funciones de los organelos celulares",
-        mensajeComplida:
-          "¡Muy bien! Conoces perfectamente la estructura celular.",
-        mensajeNoComplida:
-          "Debes estudiar más sobre los organelos y sus funciones específicas.",
-      },
-    ];
+  const generateTemplate = () => {
+    const template: Partial<Pregunta>[] =
+      modo === "examen"
+        ? [
+            {
+              curso: "Matemática - Algebra" as Curso,
+              tema: "Ecuaciones - Ecuaciones lineales",
+              area: areaExamen,
+              nivelCognitivo: "Aplicar",
+              puntaje: 1.5,
+              competencia:
+                "Resuelve problemas de ecuaciones lineales aplicando propiedades algebraicas",
+              mensajeComplida:
+                "¡Excelente! Dominas las ecuaciones lineales y sus aplicaciones.",
+              mensajeNoComplida:
+                "Necesitas reforzar el tema de ecuaciones lineales. Practica más ejercicios.",
+              alternativaCorrecta: "A" as Alternativa,
+            },
+            {
+              curso: "Física" as Curso,
+              tema: "Mecánica - Cinemática",
+              area: areaExamen,
+              nivelCognitivo: "Analizar",
+              puntaje: 2.0,
+              competencia:
+                "Analiza el movimiento de los cuerpos aplicando las leyes de la cinemática",
+              mensajeComplida:
+                "¡Muy bien! Comprendes los conceptos de cinemática correctamente.",
+              mensajeNoComplida:
+                "Debes repasar los conceptos básicos de cinemática y sus fórmulas.",
+              alternativaCorrecta: "B" as Alternativa,
+            },
+            {
+              curso: "Química" as Curso,
+              tema: "Química General - Tabla Periódica",
+              area: areaExamen,
+              nivelCognitivo: "Recordar",
+              puntaje: 1.25,
+              competencia:
+                "Identifica las propiedades de los elementos químicos según su ubicación en la tabla periódica",
+              mensajeComplida:
+                "¡Perfecto! Manejas bien la tabla periódica y las propiedades de los elementos.",
+              mensajeNoComplida:
+                "Es importante que estudies más sobre la tabla periódica y las propiedades periódicas.",
+              alternativaCorrecta: "C" as Alternativa,
+            },
+          ]
+        : [
+            {
+              curso: "Matemática - Algebra" as Curso,
+              tema: "Ecuaciones - Ecuaciones lineales",
+              area: "Ingenierías" as Area,
+              nivelCognitivo: "Aplicar",
+              puntaje: 1.5,
+              competencia:
+                "Resuelve problemas de ecuaciones lineales aplicando propiedades algebraicas",
+              mensajeComplida:
+                "¡Excelente! Dominas las ecuaciones lineales y sus aplicaciones.",
+              mensajeNoComplida:
+                "Necesitas reforzar el tema de ecuaciones lineales. Practica más ejercicios.",
+              alternativaCorrecta: "A" as Alternativa,
+            },
+            {
+              curso: "Biología" as Curso,
+              tema: "Célula - Estructura celular",
+              area: "Biomédicas" as Area,
+              nivelCognitivo: "Recordar",
+              puntaje: 2.0,
+              competencia:
+                "Identifica las estructuras celulares y sus funciones básicas",
+              mensajeComplida: "¡Perfecto! Conoces bien la estructura celular.",
+              mensajeNoComplida:
+                "Debes estudiar más sobre las estructuras celulares y sus funciones.",
+              alternativaCorrecta: "B" as Alternativa,
+            },
+            {
+              curso: "Historia" as Curso,
+              tema: "Historia del Perú - Independencia",
+              area: "Sociales" as Area,
+              nivelCognitivo: "Analizar",
+              puntaje: 1.25,
+              competencia:
+                "Analiza los procesos históricos de la independencia del Perú",
+              mensajeComplida:
+                "¡Excelente! Comprendes los procesos de independencia.",
+              mensajeNoComplida:
+                "Necesitas repasar los eventos de la independencia del Perú.",
+              alternativaCorrecta: "C" as Alternativa,
+            },
+          ];
 
     const blob = new Blob([JSON.stringify(template, null, 2)], {
       type: "application/json",
@@ -121,303 +197,453 @@ const ImportPreguntasModal = ({
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = "plantilla_preguntas.json";
+    a.download =
+      modo === "examen"
+        ? `plantilla-preguntas-${areaExamen?.toLowerCase()}.json`
+        : `plantilla-preguntas-banco-general.json`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
   };
 
-  const resetModal = () => {
-    setSelectedFile(null);
-    setImportResult(null);
-    setDragActive(false);
-    if (fileInputRef.current) {
-      fileInputRef.current.value = "";
-    }
-  };
-
   const handleClose = () => {
-    resetModal();
-    onClose();
+    if (!isImporting) {
+      onClose();
+    }
   };
 
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto">
-      <div className="flex items-end justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
-        <div className="fixed inset-0 transition-opacity" aria-hidden="true">
-          <div className="absolute inset-0 bg-gray-500 opacity-75"></div>
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+      <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full mx-4 max-h-[90vh] overflow-y-auto">
+        <div className="flex items-center justify-between p-6 border-b">
+          <div>
+            <h2 className="text-xl font-semibold text-gray-900">
+              {modo === "examen"
+                ? "Importar Preguntas al Examen"
+                : "Importar Preguntas al Banco"}
+            </h2>
+            <p className="text-sm text-gray-600 mt-1">
+              {modo === "examen"
+                ? `Área: ${areaExamen}`
+                : "Banco general de preguntas"}
+            </p>
+          </div>
+          <button
+            onClick={handleClose}
+            disabled={isImporting}
+            className="text-gray-400 hover:text-gray-600 disabled:opacity-50"
+          >
+            <X size={24} />
+          </button>
         </div>
-        <span
-          className="hidden sm:inline-block sm:align-middle sm:h-screen"
-          aria-hidden="true"
-        >
-          &#8203;
-        </span>
-        <div className="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-4xl sm:w-full">
-          <div className="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
-            <div className="flex justify-between items-center mb-6">
-              <h3 className="text-lg leading-6 font-medium text-gray-900">
-                Importar Preguntas desde JSON
+
+        <div className="p-6 space-y-6">
+          {/* Información del examen */}
+          {modo === "examen" && (
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+              <h3 className="text-sm font-medium text-blue-900 mb-2">
+                Estado del Examen
               </h3>
-              <button
-                onClick={handleClose}
-                className="text-gray-400 hover:text-gray-600 transition-colors"
-                disabled={isImporting}
-              >
-                <X size={24} />
-              </button>
-            </div>
-
-            {/* Información y plantilla */}
-            <div className="mb-6 p-4 bg-blue-50 rounded-lg">
-              <h4 className="text-sm font-medium text-blue-900 mb-2">
-                Formato requerido
-              </h4>
-              <p className="text-sm text-blue-700 mb-3">
-                El archivo JSON debe contener un array de objetos con los
-                siguientes campos obligatorios:
-              </p>
-              <ul className="text-xs text-blue-600 space-y-1 mb-3">
-                <li>
-                  • <strong>curso</strong>: Nombre del curso (texto)
-                </li>
-                <li>
-                  • <strong>tema</strong>: Tema principal (texto)
-                </li>
-                <li>
-                  • <strong>subtema</strong>: Subtema específico (texto)
-                </li>
-                <li>
-                  • <strong>area</strong>: "Biomédicas", "Ingenierías" o
-                  "Sociales"
-                </li>
-                <li>
-                  • <strong>puntaje</strong>: Puntaje decimal (número)
-                </li>
-                <li>
-                  • <strong>competencia</strong>: Descripción de la competencia
-                  (texto)
-                </li>
-                <li>
-                  • <strong>mensajeComplida</strong>: Mensaje cuando se cumple
-                  la competencia (texto)
-                </li>
-                <li>
-                  • <strong>mensajeNoComplida</strong>: Mensaje cuando no se
-                  cumple la competencia (texto)
-                </li>
-              </ul>
-              <button
-                onClick={downloadTemplate}
-                className="inline-flex items-center px-3 py-1 border border-blue-300 rounded-md text-xs font-medium text-blue-700 bg-white hover:bg-blue-50"
-              >
-                <Download size={14} className="mr-1" />
-                Descargar Plantilla
-              </button>
-            </div>
-
-            {/* Control de puntajes */}
-            <div className="mb-6 p-4 bg-yellow-50 rounded-lg">
-              <h4 className="text-sm font-medium text-yellow-900 mb-2">
-                Control de Puntajes
-              </h4>
-              <p className="text-sm text-yellow-700">
-                Puntaje actual:{" "}
-                <strong>
-                  {preguntas.reduce((sum, p) => sum + p.puntaje, 0).toFixed(1)}{" "}
-                  / 100
-                </strong>
-                <br />
-                Disponible:{" "}
-                <strong>
-                  {(
-                    100 - preguntas.reduce((sum, p) => sum + p.puntaje, 0)
-                  ).toFixed(1)}{" "}
-                  puntos
-                </strong>
-              </p>
-            </div>
-
-            {/* Área de carga de archivos */}
-            {!importResult && (
-              <div className="mb-6">
-                <div
-                  className={`relative border-2 border-dashed rounded-lg p-6 transition-colors ${
-                    dragActive
-                      ? "border-blue-400 bg-blue-50"
-                      : selectedFile
-                      ? "border-green-400 bg-green-50"
-                      : "border-gray-300 hover:border-gray-400"
-                  }`}
-                  onDragEnter={handleDrag}
-                  onDragLeave={handleDrag}
-                  onDragOver={handleDrag}
-                  onDrop={handleDrop}
-                >
-                  <div className="text-center">
-                    {selectedFile ? (
-                      <div className="flex items-center justify-center">
-                        <FileText className="h-8 w-8 text-green-600 mr-3" />
-                        <div>
-                          <p className="text-sm font-medium text-green-900">
-                            {selectedFile.name}
-                          </p>
-                          <p className="text-xs text-green-600">
-                            {(selectedFile.size / 1024).toFixed(1)} KB - Listo
-                            para importar
-                          </p>
-                        </div>
-                      </div>
-                    ) : (
-                      <div>
-                        <Upload className="mx-auto h-12 w-12 text-gray-400" />
-                        <div className="mt-4">
-                          <label
-                            htmlFor="file-upload"
-                            className="cursor-pointer"
-                          >
-                            <span className="mt-2 block text-sm font-medium text-gray-900">
-                              Arrastra tu archivo JSON aquí o{" "}
-                              <span className="text-blue-600 hover:text-blue-500">
-                                haz clic para seleccionar
-                              </span>
-                            </span>
-                          </label>
-                          <input
-                            ref={fileInputRef}
-                            id="file-upload"
-                            name="file-upload"
-                            type="file"
-                            accept=".json"
-                            className="sr-only"
-                            onChange={handleFileInput}
-                          />
-                        </div>
-                        <p className="mt-1 text-xs text-gray-500">
-                          Solo archivos JSON hasta 10MB
-                        </p>
-                      </div>
-                    )}
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                <div>
+                  <span className="text-blue-700">Preguntas:</span>
+                  <div className="font-semibold text-blue-900">
+                    {preguntasExistentes.length} / 80
+                  </div>
+                </div>
+                <div>
+                  <span className="text-blue-700">Disponibles:</span>
+                  <div
+                    className={`font-semibold ${
+                      preguntasDisponibles <= 0
+                        ? "text-red-600"
+                        : "text-green-600"
+                    }`}
+                  >
+                    {preguntasDisponibles}
+                  </div>
+                </div>
+                <div>
+                  <span className="text-blue-700">Puntaje usado:</span>
+                  <div className="font-semibold text-blue-900">
+                    {puntajeUsado.toFixed(2)} / 100
+                  </div>
+                </div>
+                <div>
+                  <span className="text-blue-700">Puntaje disponible:</span>
+                  <div
+                    className={`font-semibold ${
+                      puntajeDisponible < 0 ? "text-red-600" : "text-green-600"
+                    }`}
+                  >
+                    {puntajeDisponible.toFixed(2)}
                   </div>
                 </div>
               </div>
-            )}
-
-            {/* Progreso de importación */}
-            {isImporting && (
-              <div className="mb-6">
-                <div className="flex justify-between text-sm text-gray-600 mb-2">
-                  <span>Importando preguntas...</span>
+              <div className="mt-3 space-y-2">
+                <div className="flex justify-between text-xs text-blue-700">
+                  <span>Progreso de preguntas</span>
                   <span>
-                    {progress.current} / {progress.total} ({progress.percentage}
-                    %)
+                    {Math.round((preguntasExistentes.length / 80) * 100)}%
                   </span>
                 </div>
-                <div className="w-full bg-gray-200 rounded-full h-2">
+                <div className="w-full bg-blue-200 rounded-full h-2">
                   <div
-                    className="bg-blue-600 h-2 rounded-full transition-all duration-300"
-                    style={{ width: `${progress.percentage}%` }}
+                    className={`h-2 rounded-full transition-all duration-300 ${
+                      preguntasExistentes.length === 80
+                        ? "bg-green-500"
+                        : "bg-blue-600"
+                    }`}
+                    style={{
+                      width: `${Math.min(
+                        (preguntasExistentes.length / 80) * 100,
+                        100
+                      )}%`,
+                    }}
                   ></div>
                 </div>
               </div>
-            )}
+            </div>
+          )}
 
-            {/* Resultados de importación */}
-            {importResult && (
-              <div className="mb-6">
-                <div className="flex items-center mb-4">
-                  {importResult.success > 0 ? (
-                    <CheckCircle className="h-6 w-6 text-green-600 mr-2" />
-                  ) : (
-                    <AlertCircle className="h-6 w-6 text-red-600 mr-2" />
-                  )}
-                  <h4 className="text-lg font-medium text-gray-900">
-                    Resultados de Importación
-                  </h4>
+          {/* Restricciones importantes */}
+          <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+            <h3 className="text-sm font-medium text-yellow-900 mb-2">
+              {modo === "examen"
+                ? "⚠️ Restricciones Importantes"
+                : "📝 Información de Importación"}
+            </h3>
+            <ul className="text-sm text-yellow-800 space-y-1">
+              {modo === "examen" ? (
+                <>
+                  <li>
+                    • Todas las preguntas deben pertenecer al área{" "}
+                    <strong>{areaExamen}</strong>
+                  </li>
+                  <li>• El examen no puede exceder 80 preguntas total</li>
+                  <li>• El puntaje total no puede exceder 100 puntos</li>
+                  <li>
+                    • Las preguntas se agregarán al examen{" "}
+                    <strong>y al banco general de preguntas</strong>
+                  </li>
+                </>
+              ) : (
+                <>
+                  <li>
+                    • Las preguntas pueden ser de cualquier área (Biomédicas,
+                    Ingenierías, Sociales)
+                  </li>
+                  <li>
+                    • No hay límite en la cantidad de preguntas a importar
+                  </li>
+                  <li>• No hay restricciones de puntaje total</li>
+                  <li>
+                    • Las preguntas se agregarán al banco general para uso en
+                    exámenes
+                  </li>
+                </>
+              )}
+            </ul>
+          </div>
+
+          {/* Información adicional */}
+
+          {modo === "examen" && (
+            <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+              <h3 className="text-sm font-medium text-green-900 mb-2">
+                ✅ Beneficios de la Importación
+              </h3>
+              <ul className="text-sm text-green-800 space-y-1">
+                <li>
+                  • Las preguntas estarán disponibles en este examen específico
+                </li>
+                <li>
+                  • También se agregarán al banco general para uso en otros
+                  exámenes
+                </li>
+                <li>• Podrás reutilizar estas preguntas en futuros exámenes</li>
+                <li>
+                  • Se mantendrá la consistencia entre el examen y el banco de
+                  preguntas
+                </li>
+              </ul>
+            </div>
+          )}
+
+          {/* Plantilla */}
+          <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+            <div>
+              <h3 className="text-sm font-medium text-gray-900">
+                Plantilla JSON {modo === "examen" && <>para {areaExamen}</>}
+              </h3>
+              <p className="text-sm text-gray-600">
+                Descarga una plantilla específica para esta área
+              </p>
+            </div>
+            <button
+              onClick={generateTemplate}
+              className="inline-flex items-center px-4 py-2 bg-green-600 text-white text-sm font-medium rounded-md hover:bg-green-700 transition-colors duration-200"
+            >
+              <Download size={16} className="mr-2" />
+              Descargar Plantilla
+            </button>
+          </div>
+
+          {/* Área de carga */}
+          {!results && (
+            <div
+              className={`border-2 border-dashed rounded-lg p-8 text-center transition-colors duration-200 ${
+                dragActive
+                  ? "border-blue-400 bg-blue-50"
+                  : isImporting
+                  ? "border-gray-200 bg-gray-50"
+                  : preguntasDisponibles <= 0
+                  ? "border-red-300 bg-red-50"
+                  : "border-gray-300 hover:border-blue-400 hover:bg-blue-50"
+              }`}
+              onDragEnter={handleDrag}
+              onDragLeave={handleDrag}
+              onDragOver={handleDrag}
+              onDrop={handleDrop}
+            >
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".json"
+                onChange={handleFileInput}
+                className="hidden"
+                disabled={isImporting || preguntasDisponibles <= 0}
+              />
+
+              <div className="space-y-4">
+                <div
+                  className={`mx-auto w-12 h-12 rounded-full flex items-center justify-center ${
+                    preguntasDisponibles <= 0 ? "bg-red-100" : "bg-blue-100"
+                  }`}
+                >
+                  <Upload
+                    className={`w-6 h-6 ${
+                      preguntasDisponibles <= 0
+                        ? "text-red-600"
+                        : "text-blue-600"
+                    }`}
+                  />
                 </div>
 
-                <div className="grid grid-cols-3 gap-4 mb-4">
-                  <div className="bg-green-50 p-3 rounded-lg text-center">
-                    <div className="text-2xl font-bold text-green-600">
-                      {importResult.success}
-                    </div>
-                    <div className="text-sm text-green-700">Exitosas</div>
-                  </div>
-                  <div className="bg-red-50 p-3 rounded-lg text-center">
-                    <div className="text-2xl font-bold text-red-600">
-                      {importResult.errors.length}
-                    </div>
-                    <div className="text-sm text-red-700">Errores</div>
-                  </div>
-                  <div className="bg-blue-50 p-3 rounded-lg text-center">
-                    <div className="text-2xl font-bold text-blue-600">
-                      {importResult.total}
-                    </div>
-                    <div className="text-sm text-blue-700">Total</div>
-                  </div>
+                <div>
+                  <h3 className="text-lg font-medium text-gray-900">
+                    {isImporting
+                      ? "Importando preguntas..."
+                      : preguntasDisponibles <= 0
+                      ? "Examen completo (80/80 preguntas)"
+                      : "Arrastra tu archivo JSON aquí"}
+                  </h3>
+                  <p className="text-sm text-gray-600 mt-1">
+                    {isImporting
+                      ? "Agregando preguntas al examen y al banco general"
+                      : preguntasDisponibles <= 0
+                      ? "No se pueden agregar más preguntas a este examen"
+                      : "o haz clic para seleccionar"}
+                  </p>
                 </div>
 
-                {/* Lista de errores */}
-                {importResult.errors.length > 0 && (
-                  <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-                    <h5 className="text-sm font-medium text-red-900 mb-2">
-                      Errores encontrados:
-                    </h5>
-                    <div className="max-h-40 overflow-y-auto">
-                      {importResult.errors.map((error, index) => (
-                        <div key={index} className="text-sm text-red-700 mb-1">
-                          <strong>Fila {error.index}:</strong> {error.error}
-                        </div>
-                      ))}
+                {!isImporting && preguntasDisponibles > 0 && (
+                  <button
+                    onClick={() => fileInputRef.current?.click()}
+                    className="inline-flex items-center px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-md hover:bg-blue-700 transition-colors duration-200"
+                  >
+                    <FileText size={16} className="mr-2" />
+                    Seleccionar Archivo
+                  </button>
+                )}
+
+                {/* Barra de progreso */}
+                {isImporting && (
+                  <div className="w-full max-w-md mx-auto">
+                    <div className="flex justify-between text-sm text-gray-600 mb-1">
+                      <span>Progreso</span>
+                      <span>{progress.toFixed(0)}%</span>
+                    </div>
+                    <div className="w-full bg-gray-200 rounded-full h-2">
+                      <div
+                        className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+                        style={{ width: `${progress}%` }}
+                      ></div>
                     </div>
                   </div>
                 )}
               </div>
-            )}
-          </div>
+            </div>
+          )}
 
-          <div className="bg-gray-50 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse">
-            {!importResult ? (
-              <>
+          {/* Resultados */}
+          {results && (
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <h3 className="text-lg font-medium text-gray-900">
+                  Resultados de la Importación
+                </h3>
                 <button
-                  type="button"
-                  className="btn btn-primary sm:ml-3"
-                  onClick={processImport}
-                  disabled={!selectedFile || isImporting}
-                >
-                  {isImporting ? "Importando..." : "Importar Preguntas"}
-                </button>
-                <button
-                  type="button"
-                  className="btn btn-secondary mt-3 sm:mt-0"
                   onClick={handleClose}
-                  disabled={isImporting}
-                >
-                  Cancelar
-                </button>
-              </>
-            ) : (
-              <>
-                <button
-                  type="button"
-                  className="btn btn-primary sm:ml-3"
-                  onClick={resetModal}
-                >
-                  Nueva Importación
-                </button>
-                <button
-                  type="button"
-                  className="btn btn-secondary mt-3 sm:mt-0"
-                  onClick={handleClose}
+                  className="text-sm text-blue-600 hover:text-blue-800"
                 >
                   Cerrar
                 </button>
-              </>
-            )}
+              </div>
+
+              {/* Resumen */}
+              <div className="grid grid-cols-3 gap-4">
+                <div className="bg-green-50 border border-green-200 rounded-lg p-4 text-center">
+                  <CheckCircle className="w-8 h-8 text-green-600 mx-auto mb-2" />
+                  <div className="text-2xl font-bold text-green-900">
+                    {results.exitosos}
+                  </div>
+                  <div className="text-sm text-green-700">
+                    Agregadas al examen
+                  </div>
+                </div>
+
+                <div className="bg-red-50 border border-red-200 rounded-lg p-4 text-center">
+                  <XCircle className="w-8 h-8 text-red-600 mx-auto mb-2" />
+                  <div className="text-2xl font-bold text-red-900">
+                    {results.errores}
+                  </div>
+                  <div className="text-sm text-red-700">Errores</div>
+                </div>
+
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-center">
+                  <FileText className="w-8 h-8 text-blue-600 mx-auto mb-2" />
+                  <div className="text-2xl font-bold text-blue-900">
+                    {results.total}
+                  </div>
+                  <div className="text-sm text-blue-700">Total procesadas</div>
+                </div>
+              </div>
+
+              {/* Detalles de errores */}
+              {results.detalles.length > 0 && (
+                <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+                  <div className="flex items-center mb-3">
+                    <AlertCircle className="w-5 h-5 text-yellow-600 mr-2" />
+                    <h4 className="text-sm font-medium text-yellow-900">
+                      Detalles de Errores
+                    </h4>
+                  </div>
+                  <div className="space-y-2 max-h-40 overflow-y-auto">
+                    {results.detalles.map((detalle, index) => (
+                      <div
+                        key={index}
+                        className="text-sm text-yellow-800 bg-yellow-100 rounded p-2"
+                      >
+                        <strong>Fila {detalle.fila}:</strong> {detalle.error}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Mensaje de éxito */}
+              {results.exitosos > 0 && (
+                <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+                  <div className="flex items-center">
+                    <CheckCircle className="w-5 h-5 text-green-600 mr-2" />
+                    <p className="text-sm text-green-800">
+                      Se agregaron exitosamente {results.exitosos} preguntas al
+                      examen y al banco general de preguntas. Total de preguntas
+                      en el examen:{" "}
+                      {preguntasExistentes.length + results.exitosos}/80
+                    </p>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Formato esperado */}
+          <div className="bg-gray-50 rounded-lg p-4">
+            <h3 className="text-sm font-medium text-gray-900 mb-2">
+              Formato JSON Esperado
+            </h3>
+            <pre className="text-xs text-gray-600 bg-white p-3 rounded border overflow-x-auto">
+              {modo === "examen"
+                ? `[
+  {
+    "curso": "Matemática - Algebra",
+    "tema": "Ecuaciones - Ecuaciones lineales", 
+    "area": "${areaExamen}",
+    "nivelCognitivo": "Aplicar",
+    "puntaje": 1.5,
+    "competencia": "Resuelve problemas de ecuaciones lineales",
+    "mensajeComplida": "¡Excelente! Dominas las ecuaciones.",
+    "mensajeNoComplida": "Necesitas reforzar ecuaciones lineales.",
+    "alternativaCorrecta": "A"
+  }
+]`
+                : `[
+  {
+    "curso": "Matemática - Algebra",
+    "tema": "Ecuaciones - Ecuaciones lineales", 
+    "area": "Ingenierías",
+    "nivelCognitivo": "Aplicar",
+    "puntaje": 1.5,
+    "competencia": "Resuelve problemas de ecuaciones lineales",
+    "mensajeComplida": "¡Excelente! Dominas las ecuaciones.",
+    "mensajeNoComplida": "Necesitas reforzar ecuaciones lineales.",
+    "alternativaCorrecta": "A"
+  }
+]`}
+            </pre>
+            <div className="mt-2 text-xs text-gray-600">
+              {modo === "examen" ? (
+                <>
+                  <p>
+                    <strong>Importante:</strong> Todas las preguntas deben tener
+                    area: "{areaExamen}"
+                  </p>
+                  <p>
+                    <strong>Cursos válidos:</strong> "Biología", "Cívica",
+                    "Filosofía", "Física", "Geografía", "Historia", "Inglés -
+                    Lectura", "Inglés - Gramática", "Lenguaje", "Literatura",
+                    "Matemática - Aritmética", "Matemática - Algebra",
+                    "Matemática - Geometría", "Matemática - Trigonometría",
+                    "Psicología", "Química", "Razonamiento Lógico",
+                    "Razonamiento Matemático", "Comprensión Lectora",
+                    "Razonamiento Verbal"
+                  </p>
+                </>
+              ) : (
+                <>
+                  <p>
+                    <strong>Áreas válidas:</strong> "Biomédicas", "Ingenierías",
+                    "Sociales"
+                  </p>
+                  <p>
+                    <strong>Cursos válidos:</strong> "Biología", "Cívica",
+                    "Filosofía", "Física", "Geografía", "Historia", "Inglés -
+                    Lectura", "Inglés - Gramática", "Lenguaje", "Literatura",
+                    "Matemática - Aritmética", "Matemática - Algebra",
+                    "Matemática - Geometría", "Matemática - Trigonometría",
+                    "Psicología", "Química", "Razonamiento Lógico",
+                    "Razonamiento Matemático", "Comprensión Lectora",
+                    "Razonamiento Verbal"
+                  </p>
+                </>
+              )}
+            </div>
           </div>
+        </div>
+
+        <div className="flex justify-end p-6 border-t bg-gray-50">
+          <button
+            onClick={handleClose}
+            disabled={isImporting}
+            className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {results ? "Cerrar" : "Cancelar"}
+          </button>
         </div>
       </div>
     </div>

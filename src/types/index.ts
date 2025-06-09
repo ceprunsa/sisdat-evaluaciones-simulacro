@@ -58,17 +58,44 @@ export interface Postulante {
 // Áreas disponibles
 export type Area = "Biomédicas" | "Ingenierías" | "Sociales";
 
-// Pregunta (ACTUALIZADA)
+// Cursos disponibles
+export type Curso =
+  | "Biología"
+  | "Cívica"
+  | "Filosofía"
+  | "Física"
+  | "Geografía"
+  | "Historia"
+  | "Inglés - Lectura"
+  | "Inglés - Gramática"
+  | "Lenguaje"
+  | "Literatura"
+  | "Matemática - Aritmética"
+  | "Matemática - Algebra"
+  | "Matemática - Geometría"
+  | "Matemática - Trigonometría"
+  | "Psicología"
+  | "Química"
+  | "Razonamiento Lógico"
+  | "Razonamiento Matemático"
+  | "Comprensión Lectora"
+  | "Razonamiento Verbal";
+
+// Tipo para alternativas
+export type Alternativa = "A" | "B" | "C" | "D" | "E";
+
+// Pregunta (ACTUALIZADA - incluye nivel cognitivo como texto libre)
 export interface Pregunta {
   id: string;
-  curso: string;
-  tema: string;
-  subtema: string;
+  curso: Curso; // Cambiado de string a Curso
+  tema: string; // Incluye tema y subtema combinados
   area: Area;
+  nivelCognitivo: string; // Campo de texto libre para nivel cognitivo
   puntaje: number; // Decimal que sumado con todas las preguntas debe dar 100
   competencia: string; // Texto literal de la competencia
   mensajeComplida: string; // Mensaje cuando la competencia se cumple
   mensajeNoComplida: string; // Mensaje cuando la competencia no se cumple
+  alternativaCorrecta: Alternativa; // Alternativa correcta (A, B, C, D, E)
   createdAt: string;
   createdBy: string;
 }
@@ -85,7 +112,7 @@ export interface PreguntaEnExamen {
   numero: number; // Número de la pregunta en el examen (1-80)
 }
 
-// Examen Simulacro (ACTUALIZADO)
+// Examen Simulacro
 export interface ExamenSimulacro {
   id: string;
   nombre: string;
@@ -124,7 +151,7 @@ export interface Calificacion {
   postulante?: Postulante; // Populated field
   examenSimulacroId: string;
   examenSimulacro?: ExamenSimulacro; // Populated field
-  respuestas: number[]; // Array de 80 valores: 1 = correcto, 0 = incorrecto
+  respuestas: Alternativa[]; // Array de 80 valores: "A", "B", "C", "D", "E"
   calificacionFinal: number; // Suma de correctas y sus valores (autogenerado)
   matrizPorCurso: MatrizCurso[]; // Matriz de correctas/incorrectas por curso (autogenerado)
   retroalimentacion: RetroalimentacionCurso[]; // Mensajes por curso (autogenerado)

@@ -1,78 +1,102 @@
-"use client"
+"use client";
 
-import { useState } from "react"
-import { Link } from "react-router-dom"
-import { useCalificaciones } from "../hooks/useCalificaciones"
-import type { Calificacion } from "../types"
-import { Plus, Trash2, Search, Eye, FileSpreadsheet } from "lucide-react"
+import { useState } from "react";
+import { Link } from "react-router-dom";
+import { useCalificaciones } from "../hooks/useCalificaciones";
+import type { Calificacion } from "../types";
+import { Plus, Trash2, Search, Eye, FileSpreadsheet } from "lucide-react";
 
 const Calificaciones = () => {
-  const { calificaciones, isLoading, isError, deleteCalificacion, isDeleting, exportToExcel, isExporting } =
-    useCalificaciones()
-  const [calificacionToDelete, setCalificacionToDelete] = useState<Calificacion | null>(null)
-  const [searchTerm, setSearchTerm] = useState("")
+  const {
+    calificaciones,
+    isLoading,
+    isError,
+    deleteCalificacion,
+    isDeleting,
+    exportToExcel,
+    isExporting,
+  } = useCalificaciones();
+  const [calificacionToDelete, setCalificacionToDelete] =
+    useState<Calificacion | null>(null);
+  const [searchTerm, setSearchTerm] = useState("");
 
   // Filtrar calificaciones por término de búsqueda
   const filteredCalificaciones = calificaciones.filter(
     (calificacion) =>
-      calificacion.postulante?.apellidos.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      calificacion.postulante?.nombres.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      calificacion.postulante?.apellidos
+        .toLowerCase()
+        .includes(searchTerm.toLowerCase()) ||
+      calificacion.postulante?.nombres
+        .toLowerCase()
+        .includes(searchTerm.toLowerCase()) ||
       calificacion.postulante?.dni.includes(searchTerm) ||
-      calificacion.examenSimulacro?.nombre.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      calificacion.examenSimulacro?.proceso.toLowerCase().includes(searchTerm.toLowerCase()),
-  )
+      calificacion.examenSimulacro?.nombre
+        .toLowerCase()
+        .includes(searchTerm.toLowerCase()) ||
+      calificacion.examenSimulacro?.proceso
+        .toLowerCase()
+        .includes(searchTerm.toLowerCase())
+  );
 
   if (isLoading) {
     return (
       <div className="flex justify-center items-center h-64">
         <div className="h-12 w-12 animate-spin rounded-full border-b-2 border-t-2 border-primary"></div>
       </div>
-    )
+    );
   }
 
   if (isError) {
     return (
-      <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded-lg relative" role="alert">
+      <div
+        className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded-lg relative"
+        role="alert"
+      >
         <strong className="font-bold">Error!</strong>
-        <span className="block sm:inline"> No se pudieron cargar las calificaciones.</span>
+        <span className="block sm:inline">
+          {" "}
+          No se pudieron cargar las calificaciones.
+        </span>
       </div>
-    )
+    );
   }
 
   const handleDeleteClick = (calificacion: Calificacion) => {
-    setCalificacionToDelete(calificacion)
-  }
+    setCalificacionToDelete(calificacion);
+  };
 
   const confirmDelete = async () => {
-    if (!calificacionToDelete?.id) return
+    if (!calificacionToDelete?.id) return;
 
     try {
-      await deleteCalificacion(calificacionToDelete.id)
-      setCalificacionToDelete(null)
+      await deleteCalificacion(calificacionToDelete.id);
+      setCalificacionToDelete(null);
     } catch (error) {
-      console.error("Error al eliminar calificación:", error)
+      console.error("Error al eliminar calificación:", error);
     }
-  }
+  };
 
   const cancelDelete = () => {
-    setCalificacionToDelete(null)
-  }
+    setCalificacionToDelete(null);
+  };
 
   const handleExportToExcel = () => {
-    exportToExcel(filteredCalificaciones)
-  }
+    exportToExcel(filteredCalificaciones);
+  };
 
   const getNotaColor = (nota: number, maxNota: number) => {
-    const percentage = (nota / maxNota) * 100
-    if (percentage >= 80) return "text-green-600 bg-green-50"
-    if (percentage >= 60) return "text-yellow-600 bg-yellow-50"
-    return "text-red-600 bg-red-50"
-  }
+    const percentage = (nota / maxNota) * 100;
+    if (percentage >= 80) return "text-green-600 bg-green-50";
+    if (percentage >= 60) return "text-yellow-600 bg-yellow-50";
+    return "text-red-600 bg-red-50";
+  };
 
   return (
     <div className="w-full max-w-full mx-auto">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
-        <h1 className="text-xl md:text-2xl font-semibold text-gray-900">Calificaciones</h1>
+        <h1 className="text-xl md:text-2xl font-semibold text-gray-900">
+          Calificaciones
+        </h1>
         <div className="flex gap-2">
           <button
             onClick={handleExportToExcel}
@@ -80,10 +104,15 @@ const Calificaciones = () => {
             className="btn btn-secondary inline-flex items-center"
           >
             <FileSpreadsheet size={18} className="mr-1 md:mr-2" />
-            <span className="hidden sm:inline">{isExporting ? "Exportando..." : "Exportar Excel"}</span>
+            <span className="hidden sm:inline">
+              {isExporting ? "Exportando..." : "Exportar Excel"}
+            </span>
             <span className="sm:hidden">{isExporting ? "..." : "Excel"}</span>
           </button>
-          <Link to="/calificaciones/new" className="btn btn-primary inline-flex items-center">
+          <Link
+            to="/calificaciones/new"
+            className="btn btn-primary inline-flex items-center"
+          >
             <Plus size={18} className="mr-1 md:mr-2" />
             <span className="hidden sm:inline">Nueva Calificación</span>
             <span className="sm:hidden">Nueva</span>
@@ -138,30 +167,46 @@ const Calificaciones = () => {
 
             {/* Filas de calificaciones */}
             {filteredCalificaciones.map((calificacion, index) => {
-              const maxNota = calificacion.examenSimulacro?.preguntasData?.reduce((sum, p) => sum + p.puntaje, 0) || 100
+              const maxNota =
+                calificacion.examenSimulacro?.preguntasData?.reduce(
+                  (sum, p) => sum + p.puntaje,
+                  0
+                ) || 100;
 
               return (
                 <div
                   key={calificacion.id}
                   className={`p-4 xl:p-0 hover:bg-gray-50 transition-colors duration-150 ${
-                    index === filteredCalificaciones.length - 1 ? "rounded-b-lg" : ""
+                    index === filteredCalificaciones.length - 1
+                      ? "rounded-b-lg"
+                      : ""
                   }`}
                 >
                   {/* Vista para pantallas grandes */}
                   <div className="hidden xl:grid xl:grid-cols-12 xl:items-center xl:px-6 xl:py-4">
                     <div className="xl:col-span-3">
                       <div className="text-sm font-medium text-gray-900">
-                        {calificacion.postulante?.apellidos}, {calificacion.postulante?.nombres}
+                        {calificacion.postulante?.apellidos},{" "}
+                        {calificacion.postulante?.nombres}
                       </div>
-                      <div className="text-sm text-gray-500">DNI: {calificacion.postulante?.dni}</div>
+                      <div className="text-sm text-gray-500">
+                        DNI: {calificacion.postulante?.dni}
+                      </div>
                     </div>
                     <div className="xl:col-span-3">
-                      <div className="text-sm font-medium text-gray-900">{calificacion.examenSimulacro?.nombre}</div>
-                      <div className="text-sm text-gray-500">{calificacion.examenSimulacro?.proceso}</div>
+                      <div className="text-sm font-medium text-gray-900">
+                        {calificacion.examenSimulacro?.nombre}
+                      </div>
+                      <div className="text-sm text-gray-500">
+                        {calificacion.examenSimulacro?.proceso}
+                      </div>
                     </div>
                     <div className="xl:col-span-2">
                       <span
-                        className={`px-3 py-1 text-sm font-semibold rounded-full ${getNotaColor(calificacion.calificacionFinal, maxNota)}`}
+                        className={`px-3 py-1 text-sm font-semibold rounded-full ${getNotaColor(
+                          calificacion.calificacionFinal,
+                          maxNota
+                        )}`}
                       >
                         {calificacion.calificacionFinal.toFixed(2)} / {maxNota}
                       </span>
@@ -192,9 +237,12 @@ const Calificaciones = () => {
                     <div className="flex items-center justify-between mb-2">
                       <div>
                         <div className="font-medium text-gray-900">
-                          {calificacion.postulante?.apellidos}, {calificacion.postulante?.nombres}
+                          {calificacion.postulante?.apellidos},{" "}
+                          {calificacion.postulante?.nombres}
                         </div>
-                        <div className="text-sm text-gray-500">DNI: {calificacion.postulante?.dni}</div>
+                        <div className="text-sm text-gray-500">
+                          DNI: {calificacion.postulante?.dni}
+                        </div>
                       </div>
                       <div className="flex space-x-1">
                         <Link
@@ -212,22 +260,31 @@ const Calificaciones = () => {
                       </div>
                     </div>
                     <div className="mb-2">
-                      <div className="text-sm font-medium text-gray-700">{calificacion.examenSimulacro?.nombre}</div>
-                      <div className="text-sm text-gray-500">{calificacion.examenSimulacro?.proceso}</div>
+                      <div className="text-sm font-medium text-gray-700">
+                        {calificacion.examenSimulacro?.nombre}
+                      </div>
+                      <div className="text-sm text-gray-500">
+                        {calificacion.examenSimulacro?.proceso}
+                      </div>
                     </div>
                     <div className="flex items-center justify-between">
                       <span
-                        className={`px-3 py-1 text-sm font-semibold rounded-full ${getNotaColor(calificacion.calificacionFinal, maxNota)}`}
+                        className={`px-3 py-1 text-sm font-semibold rounded-full ${getNotaColor(
+                          calificacion.calificacionFinal,
+                          maxNota
+                        )}`}
                       >
                         {calificacion.calificacionFinal.toFixed(2)} / {maxNota}
                       </span>
                       <div className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded-md">
-                        {new Date(calificacion.fechaExamen).toLocaleDateString()}
+                        {new Date(
+                          calificacion.fechaExamen
+                        ).toLocaleDateString()}
                       </div>
                     </div>
                   </div>
                 </div>
-              )
+              );
             })}
           </div>
         )}
@@ -237,10 +294,16 @@ const Calificaciones = () => {
       {calificacionToDelete && (
         <div className="fixed z-50 inset-0 overflow-y-auto">
           <div className="flex items-end justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
-            <div className="fixed inset-0 transition-opacity" aria-hidden="true">
+            <div
+              className="fixed inset-0 transition-opacity"
+              aria-hidden="true"
+            >
               <div className="absolute inset-0 bg-gray-500 opacity-75"></div>
             </div>
-            <span className="hidden sm:inline-block sm:align-middle sm:h-screen" aria-hidden="true">
+            <span
+              className="hidden sm:inline-block sm:align-middle sm:h-screen"
+              aria-hidden="true"
+            >
               &#8203;
             </span>
             <div className="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full">
@@ -250,23 +313,33 @@ const Calificaciones = () => {
                     <Trash2 className="h-6 w-6 text-red-600" />
                   </div>
                   <div className="mt-3 text-center sm:mt-0 sm:ml-4 sm:text-left">
-                    <h3 className="text-lg leading-6 font-medium text-gray-900">Eliminar calificación</h3>
+                    <h3 className="text-lg leading-6 font-medium text-gray-900">
+                      Eliminar calificación
+                    </h3>
                     <div className="mt-2">
                       <p className="text-sm text-gray-500">
                         ¿Estás seguro de que deseas eliminar la calificación de{" "}
                         <span className="font-semibold">
-                          {calificacionToDelete.postulante?.apellidos}, {calificacionToDelete.postulante?.nombres}
+                          {calificacionToDelete.postulante?.apellidos},{" "}
+                          {calificacionToDelete.postulante?.nombres}
                         </span>{" "}
                         para el examen{" "}
-                        <span className="font-semibold">{calificacionToDelete.examenSimulacro?.nombre}</span>? Esta
-                        acción no se puede deshacer.
+                        <span className="font-semibold">
+                          {calificacionToDelete.examenSimulacro?.nombre}
+                        </span>
+                        ? Esta acción no se puede deshacer.
                       </p>
                     </div>
                   </div>
                 </div>
               </div>
               <div className="bg-gray-50 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse">
-                <button type="button" className="btn btn-danger sm:ml-3" onClick={confirmDelete} disabled={isDeleting}>
+                <button
+                  type="button"
+                  className="btn btn-danger sm:ml-3"
+                  onClick={confirmDelete}
+                  disabled={isDeleting}
+                >
                   {isDeleting ? "Eliminando..." : "Eliminar"}
                 </button>
                 <button
@@ -283,7 +356,7 @@ const Calificaciones = () => {
         </div>
       )}
     </div>
-  )
-}
+  );
+};
 
-export default Calificaciones
+export default Calificaciones;

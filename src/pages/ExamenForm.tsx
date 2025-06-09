@@ -4,6 +4,7 @@ import { useState, useEffect, type FormEvent, type ChangeEvent } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useExamenes } from "../hooks/useExamenes";
 import { usePreguntas } from "../hooks/usePreguntas";
+import ImportPreguntasModal from "../components/ImportPreguntasModal";
 import toast from "react-hot-toast";
 import type {
   ExamenSimulacro,
@@ -20,6 +21,7 @@ import {
   Hash,
   ArrowUp,
   ArrowDown,
+  Upload,
 } from "lucide-react";
 
 const ExamenForm = () => {
@@ -35,6 +37,7 @@ const ExamenForm = () => {
     area: "Biomédicas",
     preguntas: [],
     preguntasOrdenadas: [],
+    preguntasData: [],
     matrizConformacion: [],
     estado: "construccion",
   });
@@ -42,6 +45,7 @@ const ExamenForm = () => {
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [searchPregunta, setSearchPregunta] = useState("");
   const [filterCurso, setFilterCurso] = useState<string>("todos");
+  const [showImportModal, setShowImportModal] = useState(false);
 
   // Obtener cursos únicos para el filtro
   const cursosUnicos = [...new Set(preguntas.map((p) => p.curso))].sort();
@@ -65,7 +69,13 @@ const ExamenForm = () => {
   // Obtener preguntas seleccionadas con datos completos
   const preguntasSeleccionadas = (formData.preguntasOrdenadas || [])
     .map((item) => {
-      const pregunta = preguntas.find((p) => p.id === item.preguntaId);
+      // Buscar primero en preguntasData del examen, luego en preguntas generales
+      let pregunta = formData.preguntasData?.find(
+        (p) => p.id === item.preguntaId
+      );
+      if (!pregunta) {
+        pregunta = preguntas.find((p) => p.id === item.preguntaId);
+      }
       return pregunta ? { ...pregunta, numero: item.numero } : null;
     })
     .filter((p) => p !== null)
@@ -85,7 +95,7 @@ const ExamenForm = () => {
         existingExamen.preguntas.length > 0
       ) {
         preguntasOrdenadas = existingExamen.preguntas.map(
-          (preguntaId: String, index: number) => ({
+          (preguntaId: string, index: number) => ({
             preguntaId,
             numero: index + 1,
           })
@@ -99,6 +109,7 @@ const ExamenForm = () => {
         area: existingExamen.area || "Biomédicas",
         preguntas: existingExamen.preguntas || [],
         preguntasOrdenadas,
+        preguntasData: existingExamen.preguntasData || [],
         matrizConformacion: existingExamen.matrizConformacion || [],
         estado: existingExamen.estado || "construccion",
       });
@@ -109,7 +120,16 @@ const ExamenForm = () => {
   useEffect(() => {
     if (formData.preguntasOrdenadas && formData.preguntasOrdenadas.length > 0) {
       const preguntasData = formData.preguntasOrdenadas
-        .map((item) => preguntas.find((p) => p.id === item.preguntaId))
+        .map((item) => {
+          // Buscar en preguntasData del examen primero, luego en preguntas generales
+          let pregunta = formData.preguntasData?.find(
+            (p) => p.id === item.preguntaId
+          );
+          if (!pregunta) {
+            pregunta = preguntas.find((p) => p.id === item.preguntaId);
+          }
+          return pregunta;
+        })
         .filter((p) => p !== undefined);
 
       const matrizPorCurso: Record<string, number> = {};
@@ -134,8 +154,15 @@ const ExamenForm = () => {
         preguntas:
           formData.preguntasOrdenadas?.map((item) => item.preguntaId) || [],
       }));
+    } else {
+      // Si no hay preguntas, limpiar la matriz de conformación
+      setFormData((prev) => ({
+        ...prev,
+        matrizConformacion: [],
+        preguntas: [],
+      }));
     }
-  }, [formData.preguntasOrdenadas, preguntas]);
+  }, [formData.preguntasOrdenadas, formData.preguntasData, preguntas]);
 
   const validateForm = (): boolean => {
     const newErrors: Record<string, string> = {};
@@ -170,6 +197,7 @@ const ExamenForm = () => {
         ...prev,
         preguntas: [],
         preguntasOrdenadas: [],
+        preguntasData: [],
         matrizConformacion: [],
       }));
     }
@@ -182,9 +210,16 @@ const ExamenForm = () => {
       numero: siguienteNumero,
     };
 
+    // Buscar los datos completos de la pregunta
+    const preguntaCompleta = preguntas.find((p) => p.id === preguntaId);
+
     setFormData((prev) => ({
       ...prev,
       preguntasOrdenadas: [...(prev.preguntasOrdenadas || []), nuevaPregunta],
+      preguntas: [...(prev.preguntas || []), preguntaId],
+      preguntasData: preguntaCompleta
+        ? [...(prev.preguntasData || []), preguntaCompleta]
+        : prev.preguntasData,
     }));
   };
 
@@ -196,9 +231,18 @@ const ExamenForm = () => {
         numero: index + 1, // Renumerar automáticamente
       }));
 
+    const preguntasIdsActualizados = preguntasActualizadas.map(
+      (item) => item.preguntaId
+    );
+    const preguntasDataActualizadas = (formData.preguntasData || []).filter(
+      (pregunta) => preguntaId !== pregunta.id
+    );
+
     setFormData((prev) => ({
       ...prev,
       preguntasOrdenadas: preguntasActualizadas,
+      preguntas: preguntasIdsActualizados,
+      preguntasData: preguntasDataActualizadas,
     }));
   };
 
@@ -227,10 +271,76 @@ const ExamenForm = () => {
       numero: idx + 1,
     }));
 
+    // Actualizar el array de IDs para mantener el mismo orden
+    const preguntasIdsOrdenados = preguntasRenumeradas.map(
+      (item) => item.preguntaId
+    );
+
     setFormData((prev) => ({
       ...prev,
       preguntasOrdenadas: preguntasRenumeradas,
+      preguntas: preguntasIdsOrdenados,
     }));
+  };
+
+  const handleBorrarTodasLasPreguntas = () => {
+    toast.custom(
+      (t) => (
+        <div
+          className={`${
+            t.visible ? "animate-enter" : "animate-leave"
+          } max-w-md w-full bg-white shadow-lg rounded-lg pointer-events-auto flex ring-1 ring-black ring-opacity-5`}
+        >
+          <div className="flex-1 w-0 p-4">
+            <div className="flex items-start">
+              <div className="flex-shrink-0">
+                <Trash2 className="h-6 w-6 text-red-400" />
+              </div>
+              <div className="ml-3 flex-1">
+                <p className="text-sm font-medium text-gray-900">
+                  Eliminar todas las preguntas
+                </p>
+                <p className="mt-1 text-sm text-gray-500">
+                  Se eliminarán {formData.preguntasOrdenadas?.length || 0}{" "}
+                  preguntas del examen. Esta acción no se puede deshacer.
+                </p>
+              </div>
+            </div>
+          </div>
+          <div className="flex border-l border-gray-200">
+            <button
+              onClick={() => {
+                toast.dismiss(t.id);
+                setFormData((prev) => ({
+                  ...prev,
+                  preguntasOrdenadas: [],
+                  preguntas: [],
+                  preguntasData: [],
+                  matrizConformacion: [],
+                }));
+                toast.success(
+                  "Todas las preguntas han sido eliminadas del examen"
+                );
+              }}
+              className="w-full border border-transparent rounded-none rounded-r-lg p-4 flex items-center justify-center text-sm font-medium text-red-600 hover:text-red-500 focus:outline-none focus:ring-2 focus:ring-red-500"
+            >
+              Eliminar
+            </button>
+          </div>
+          <div className="flex border-l border-gray-200">
+            <button
+              onClick={() => toast.dismiss(t.id)}
+              className="w-full border border-transparent rounded-none rounded-r-lg p-4 flex items-center justify-center text-sm font-medium text-gray-700 hover:text-gray-500 focus:outline-none focus:ring-2 focus:ring-gray-500"
+            >
+              Cancelar
+            </button>
+          </div>
+        </div>
+      ),
+      {
+        duration: Number.POSITIVE_INFINITY,
+      }
+    );
   };
 
   const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
@@ -438,14 +548,43 @@ const ExamenForm = () => {
 
                 {/* Preguntas seleccionadas */}
                 <div>
-                  <h4 className="text-lg font-medium text-gray-900 mb-3">
-                    Preguntas Seleccionadas (
-                    {formData.preguntasOrdenadas?.length || 0}/80)
-                  </h4>
+                  <div className="flex items-center justify-between mb-3">
+                    <h4 className="text-lg font-medium text-gray-900">
+                      Preguntas del Examen (
+                      {formData.preguntasOrdenadas?.length || 0}/80)
+                    </h4>
+                    <div className="flex space-x-2">
+                      {(formData.preguntasOrdenadas?.length || 0) > 0 && (
+                        <button
+                          type="button"
+                          onClick={handleBorrarTodasLasPreguntas}
+                          className="inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500"
+                        >
+                          <Trash2 size={16} className="mr-2" />
+                          Borrar Todas
+                        </button>
+                      )}
+                      {id && (
+                        <button
+                          type="button"
+                          onClick={() => setShowImportModal(true)}
+                          disabled={
+                            (formData.preguntasOrdenadas?.length || 0) >= 80
+                          }
+                          className="inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          <Upload size={16} className="mr-2" />
+                          Importar Preguntas
+                        </button>
+                      )}
+                    </div>
+                  </div>
                   {preguntasSeleccionadas.length === 0 ? (
                     <div className="text-center py-8 text-gray-500">
-                      No hay preguntas seleccionadas. Agrega preguntas desde la
-                      sección de abajo.
+                      No hay preguntas en este examen.{" "}
+                      {id
+                        ? "Usa el botón 'Importar Preguntas' o agrega preguntas desde la sección de abajo."
+                        : "Guarda el examen primero para poder importar preguntas."}
                     </div>
                   ) : (
                     <div className="bg-gray-50 rounded-lg p-4 max-h-60 overflow-y-auto">
@@ -470,7 +609,7 @@ const ExamenForm = () => {
                                   {pregunta.curso}
                                 </div>
                                 <div className="text-xs text-gray-500">
-                                  {pregunta.tema} - {pregunta.subtema}
+                                  {pregunta.tema}
                                 </div>
                                 <div className="text-xs text-gray-600 mt-1 line-clamp-1">
                                   {pregunta.competencia.length > 60
@@ -530,10 +669,10 @@ const ExamenForm = () => {
                   )}
                 </div>
 
-                {/* Agregar preguntas */}
+                {/* Agregar preguntas individuales */}
                 <div>
                   <h4 className="text-lg font-medium text-gray-900 mb-3">
-                    Agregar Preguntas (Área: {formData.area})
+                    Agregar Preguntas Individuales (Área: {formData.area})
                   </h4>
 
                   {/* Filtros para preguntas */}
@@ -592,7 +731,7 @@ const ExamenForm = () => {
                                 {pregunta.curso}
                               </div>
                               <div className="text-xs text-gray-500">
-                                {pregunta.tema} - {pregunta.subtema}
+                                {pregunta.tema}
                               </div>
                               <div className="text-xs text-gray-600 mt-1 line-clamp-1">
                                 {pregunta.competencia.length > 80
@@ -652,6 +791,18 @@ const ExamenForm = () => {
           </form>
         </div>
       </div>
+
+      {/* Modal de importación */}
+      {showImportModal && id && formData.area && (
+        <ImportPreguntasModal
+          isOpen={showImportModal}
+          onClose={() => setShowImportModal(false)}
+          examenId={id}
+          areaExamen={formData.area}
+          preguntasExistentes={formData.preguntasData || []}
+          modo="examen"
+        />
+      )}
     </div>
   );
 };

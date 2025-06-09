@@ -4,28 +4,38 @@ import { useState, useEffect, type FormEvent, type ChangeEvent } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { usePreguntas } from "../hooks/usePreguntas";
 import toast from "react-hot-toast";
-import type { Pregunta, Area } from "../types";
-import { Save, X, Calculator } from "lucide-react";
+import type { Pregunta, Area, Alternativa } from "../types";
+import { Save, X, Brain, Info } from "lucide-react";
 
 const PreguntaForm = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { preguntaByIdQuery, savePregunta, isSaving, preguntas } =
-    usePreguntas();
+  const { preguntaByIdQuery, savePregunta, isSaving } = usePreguntas();
   const { data: existingPregunta, isLoading } = preguntaByIdQuery(id);
 
   const [formData, setFormData] = useState<Partial<Pregunta>>({
-    curso: "",
+    curso: undefined,
     tema: "",
-    subtema: "",
     area: "Biomédicas",
+    nivelCognitivo: "",
     puntaje: 1.0,
     competencia: "",
     mensajeComplida: "",
     mensajeNoComplida: "",
+    alternativaCorrecta: "A",
   });
 
   const [errors, setErrors] = useState<Record<string, string>>({});
+
+  // Sugerencias de niveles cognitivos basados en Bloom
+  const sugerenciasBloom = [
+    "Recordar",
+    "Comprender",
+    "Aplicar",
+    "Analizar",
+    "Evaluar",
+    "Crear",
+  ];
 
   useEffect(() => {
     if (existingPregunta) {
@@ -33,33 +43,24 @@ const PreguntaForm = () => {
         id: existingPregunta.id,
         curso: existingPregunta.curso || "",
         tema: existingPregunta.tema || "",
-        subtema: existingPregunta.subtema || "",
         area: existingPregunta.area || "Biomédicas",
+        nivelCognitivo: existingPregunta.nivelCognitivo || "",
         puntaje: existingPregunta.puntaje || 1.0,
         competencia: existingPregunta.competencia || "",
         mensajeComplida: existingPregunta.mensajeComplida || "",
         mensajeNoComplida: existingPregunta.mensajeNoComplida || "",
+        alternativaCorrecta: existingPregunta.alternativaCorrecta || "A",
       });
     }
   }, [existingPregunta]);
-
-  // Calcular el total de puntajes actuales
-  const calcularTotalPuntajes = () => {
-    const preguntasExistentes = preguntas.filter((p) => p.id !== formData.id);
-    const totalExistente = preguntasExistentes.reduce(
-      (sum, p) => sum + p.puntaje,
-      0
-    );
-    const puntajeActual = formData.puntaje || 0;
-    return totalExistente + puntajeActual;
-  };
 
   const validateForm = (): boolean => {
     const newErrors: Record<string, string> = {};
 
     if (!formData.curso) newErrors.curso = "El curso es requerido";
     if (!formData.tema) newErrors.tema = "El tema es requerido";
-    if (!formData.subtema) newErrors.subtema = "El subtema es requerido";
+    if (!formData.nivelCognitivo)
+      newErrors.nivelCognitivo = "El nivel cognitivo es requerido";
     if (!formData.competencia)
       newErrors.competencia = "La competencia es requerida";
     if (!formData.mensajeComplida)
@@ -68,17 +69,12 @@ const PreguntaForm = () => {
     if (!formData.mensajeNoComplida)
       newErrors.mensajeNoComplida =
         "El mensaje de competencia no cumplida es requerido";
+    if (!formData.alternativaCorrecta)
+      newErrors.alternativaCorrecta = "La alternativa correcta es requerida";
 
     // Validar puntaje
     if (!formData.puntaje || formData.puntaje <= 0) {
       newErrors.puntaje = "El puntaje debe ser mayor a 0";
-    } else {
-      const totalPuntajes = calcularTotalPuntajes();
-      if (totalPuntajes > 100) {
-        newErrors.puntaje = `El total de puntajes no puede exceder 100. Total actual: ${totalPuntajes.toFixed(
-          2
-        )}`;
-      }
     }
 
     setErrors(newErrors);
@@ -103,6 +99,21 @@ const PreguntaForm = () => {
     }
   };
 
+  const handleSugerenciaClick = (sugerencia: string) => {
+    setFormData((prev) => ({
+      ...prev,
+      nivelCognitivo: sugerencia,
+    }));
+
+    // Limpiar error si existe
+    if (errors.nivelCognitivo) {
+      setErrors((prev) => ({
+        ...prev,
+        nivelCognitivo: "",
+      }));
+    }
+  };
+
   const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
 
@@ -115,6 +126,7 @@ const PreguntaForm = () => {
       const preguntaData: Partial<Pregunta> = {
         ...formData,
         area: formData.area as Area,
+        alternativaCorrecta: formData.alternativaCorrecta as Alternativa,
       };
 
       savePregunta(preguntaData);
@@ -135,9 +147,6 @@ const PreguntaForm = () => {
     );
   }
 
-  const totalPuntajes = calcularTotalPuntajes();
-  const puntajeRestante = 100 - totalPuntajes;
-
   return (
     <div className="max-w-7xl mx-auto">
       <div className="md:grid md:grid-cols-3 md:gap-6">
@@ -152,53 +161,32 @@ const PreguntaForm = () => {
                 : "Completa la información para crear una nueva pregunta"}
             </p>
 
-            {/* Información de puntajes */}
-            <div className="mt-6 p-4 bg-blue-50 rounded-lg">
-              <h4 className="text-sm font-medium text-blue-900 flex items-center">
-                <Calculator className="h-4 w-4 mr-2" />
-                Control de Puntajes
+            {/* Información sobre taxonomía de Bloom */}
+            <div className="mt-6 p-4 bg-purple-50 rounded-lg">
+              <h4 className="text-sm font-medium text-purple-900 flex items-center">
+                <Brain className="h-4 w-4 mr-2" />
+                Taxonomía de Bloom
               </h4>
-              <div className="mt-2 space-y-2">
-                <div className="flex justify-between text-sm">
-                  <span className="text-blue-700">Total actual:</span>
-                  <span className="font-semibold text-blue-900">
-                    {totalPuntajes.toFixed(2)} / 100
-                  </span>
+              <p className="mt-1 text-xs text-purple-700">
+                Se recomienda usar los niveles de la taxonomía de Bloom para
+                clasificar las preguntas según su complejidad cognitiva.
+              </p>
+              <div className="mt-3 space-y-1">
+                <p className="text-xs text-purple-600 font-medium">
+                  Niveles recomendados:
+                </p>
+                <div className="flex flex-wrap gap-1">
+                  {sugerenciasBloom.map((nivel) => (
+                    <button
+                      key={nivel}
+                      type="button"
+                      onClick={() => handleSugerenciaClick(nivel)}
+                      className="px-2 py-1 text-xs bg-purple-100 text-purple-800 rounded hover:bg-purple-200 transition-colors duration-200"
+                    >
+                      {nivel}
+                    </button>
+                  ))}
                 </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-blue-700">Disponible:</span>
-                  <span
-                    className={`font-semibold ${
-                      puntajeRestante < 0 ? "text-red-600" : "text-green-600"
-                    }`}
-                  >
-                    {puntajeRestante.toFixed(2)}
-                  </span>
-                </div>
-                <div className="w-full bg-blue-200 rounded-full h-2">
-                  <div
-                    className={`h-2 rounded-full transition-all duration-300 ${
-                      totalPuntajes > 100
-                        ? "bg-red-500"
-                        : totalPuntajes === 100
-                        ? "bg-green-500"
-                        : "bg-blue-600"
-                    }`}
-                    style={{
-                      width: `${Math.min((totalPuntajes / 100) * 100, 100)}%`,
-                    }}
-                  ></div>
-                </div>
-                {totalPuntajes > 100 && (
-                  <p className="text-xs text-red-600 mt-1">
-                    ⚠️ El total excede 100 puntos
-                  </p>
-                )}
-                {totalPuntajes === 100 && (
-                  <p className="text-xs text-green-600 mt-1">
-                    ✅ Total completo: 100 puntos
-                  </p>
-                )}
               </div>
             </div>
           </div>
@@ -216,8 +204,7 @@ const PreguntaForm = () => {
                     >
                       Curso *
                     </label>
-                    <input
-                      type="text"
+                    <select
                       name="curso"
                       id="curso"
                       value={formData.curso || ""}
@@ -225,8 +212,47 @@ const PreguntaForm = () => {
                       className={`mt-1 focus:ring-blue-500 focus:border-blue-500 block w-full shadow-sm sm:text-sm border-gray-300 rounded-md ${
                         errors.curso ? "border-red-500" : ""
                       }`}
-                      placeholder="Ej: Matemática"
-                    />
+                    >
+                      <option value="">Selecciona un curso</option>
+                      <option value="Biología">Biología</option>
+                      <option value="Cívica">Cívica</option>
+                      <option value="Filosofía">Filosofía</option>
+                      <option value="Física">Física</option>
+                      <option value="Geografía">Geografía</option>
+                      <option value="Historia">Historia</option>
+                      <option value="Inglés - Lectura">Inglés - Lectura</option>
+                      <option value="Inglés - Gramática">
+                        Inglés - Gramática
+                      </option>
+                      <option value="Lenguaje">Lenguaje</option>
+                      <option value="Literatura">Literatura</option>
+                      <option value="Matemática - Aritmética">
+                        Matemática - Aritmética
+                      </option>
+                      <option value="Matemática - Algebra">
+                        Matemática - Algebra
+                      </option>
+                      <option value="Matemática - Geometría">
+                        Matemática - Geometría
+                      </option>
+                      <option value="Matemática - Trigonometría">
+                        Matemática - Trigonometría
+                      </option>
+                      <option value="Psicología">Psicología</option>
+                      <option value="Química">Química</option>
+                      <option value="Razonamiento Lógico">
+                        Razonamiento Lógico
+                      </option>
+                      <option value="Razonamiento Matemático">
+                        Razonamiento Matemático
+                      </option>
+                      <option value="Comprensión Lectora">
+                        Comprensión Lectora
+                      </option>
+                      <option value="Razonamiento Verbal">
+                        Razonamiento Verbal
+                      </option>
+                    </select>
                     {errors.curso && (
                       <p className="mt-1 text-sm text-red-600">
                         {errors.curso}
@@ -285,7 +311,7 @@ const PreguntaForm = () => {
                     </p>
                   </div>
 
-                  <div className="col-span-6 sm:col-span-3">
+                  <div className="col-span-6">
                     <label
                       htmlFor="tema"
                       className="block text-sm font-medium text-gray-700"
@@ -301,34 +327,76 @@ const PreguntaForm = () => {
                       className={`mt-1 focus:ring-blue-500 focus:border-blue-500 block w-full shadow-sm sm:text-sm border-gray-300 rounded-md ${
                         errors.tema ? "border-red-500" : ""
                       }`}
-                      placeholder="Ej: Álgebra"
+                      placeholder="Ej: Célula - Estructura celular, Ecuaciones - Sistemas lineales"
                     />
                     {errors.tema && (
                       <p className="mt-1 text-sm text-red-600">{errors.tema}</p>
                     )}
+                    <p className="mt-1 text-xs text-gray-500">
+                      Incluye el tema principal y subtema separados por guión
+                      (Ej: Célula - Estructura celular)
+                    </p>
                   </div>
 
                   <div className="col-span-6 sm:col-span-3">
                     <label
-                      htmlFor="subtema"
+                      htmlFor="nivelCognitivo"
                       className="block text-sm font-medium text-gray-700"
                     >
-                      Subtema *
+                      Nivel Cognitivo *
                     </label>
                     <input
                       type="text"
-                      name="subtema"
-                      id="subtema"
-                      value={formData.subtema || ""}
+                      name="nivelCognitivo"
+                      id="nivelCognitivo"
+                      value={formData.nivelCognitivo || ""}
                       onChange={handleChange}
                       className={`mt-1 focus:ring-blue-500 focus:border-blue-500 block w-full shadow-sm sm:text-sm border-gray-300 rounded-md ${
-                        errors.subtema ? "border-red-500" : ""
+                        errors.nivelCognitivo ? "border-red-500" : ""
                       }`}
-                      placeholder="Ej: Ecuaciones lineales"
+                      placeholder="Ej: Recordar, Comprender, Aplicar..."
                     />
-                    {errors.subtema && (
+                    {errors.nivelCognitivo && (
                       <p className="mt-1 text-sm text-red-600">
-                        {errors.subtema}
+                        {errors.nivelCognitivo}
+                      </p>
+                    )}
+                    <div className="mt-1 flex items-start space-x-1">
+                      <Info className="h-3 w-3 text-blue-500 mt-0.5 flex-shrink-0" />
+                      <p className="text-xs text-blue-600">
+                        Se recomienda usar los niveles de Bloom. Haz clic en las
+                        sugerencias del panel lateral.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="col-span-6 sm:col-span-3">
+                    <label
+                      htmlFor="alternativaCorrecta"
+                      className="block text-sm font-medium text-gray-700"
+                    >
+                      Alternativa Correcta *
+                    </label>
+                    <div className="mt-2 flex space-x-4">
+                      {["A", "B", "C", "D", "E"].map((alt) => (
+                        <label key={alt} className="inline-flex items-center">
+                          <input
+                            type="radio"
+                            name="alternativaCorrecta"
+                            value={alt}
+                            checked={formData.alternativaCorrecta === alt}
+                            onChange={handleChange}
+                            className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300"
+                          />
+                          <span className="ml-2 text-sm font-medium text-gray-700">
+                            {alt}
+                          </span>
+                        </label>
+                      ))}
+                    </div>
+                    {errors.alternativaCorrecta && (
+                      <p className="mt-1 text-sm text-red-600">
+                        {errors.alternativaCorrecta}
                       </p>
                     )}
                   </div>
@@ -439,8 +507,16 @@ const PreguntaForm = () => {
                           agregarán posteriormente
                           <br />• Los puntajes deben sumar exactamente 100
                           puntos entre todas las preguntas
-                          <br />• Los mensajes de competencia se mostrarán en la
-                          retroalimentación del estudiante
+                          <br />• Selecciona la alternativa correcta (A, B, C, D
+                          o E)
+                          <br />• En el tema incluye tanto el tema principal
+                          como el subtema
+                          <br />•{" "}
+                          <strong>
+                            Se recomienda usar la taxonomía de Bloom
+                          </strong>{" "}
+                          para el nivel cognitivo (Recordar, Comprender,
+                          Aplicar, Analizar, Evaluar, Crear)
                         </p>
                       </div>
                     </div>

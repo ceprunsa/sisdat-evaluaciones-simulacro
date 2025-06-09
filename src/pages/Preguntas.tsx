@@ -14,6 +14,7 @@ import {
   Target,
   Calculator,
   Upload,
+  Brain,
 } from "lucide-react";
 
 const Preguntas = () => {
@@ -25,24 +26,34 @@ const Preguntas = () => {
   const [searchTerm, setSearchTerm] = useState("");
   const [filterArea, setFilterArea] = useState<string>("todas");
   const [filterCurso, setFilterCurso] = useState<string>("todos");
+  const [filterNivelCognitivo, setFilterNivelCognitivo] =
+    useState<string>("todos");
   const [showImportModal, setShowImportModal] = useState(false);
 
-  // Obtener cursos únicos para el filtro
+  // Obtener valores únicos para los filtros
   const cursosUnicos = [...new Set(preguntas.map((p) => p.curso))].sort();
+  const nivelesCognitivosUnicos = [
+    ...new Set(preguntas.map((p) => p.nivelCognitivo)),
+  ].sort();
 
   // Filtrar preguntas
   const preguntasFiltradas = preguntas.filter((pregunta) => {
     const matchesSearch =
       pregunta.curso.toLowerCase().includes(searchTerm.toLowerCase()) ||
       pregunta.tema.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      pregunta.subtema.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      pregunta.competencia.toLowerCase().includes(searchTerm.toLowerCase());
+      pregunta.competencia.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      pregunta.nivelCognitivo.toLowerCase().includes(searchTerm.toLowerCase());
 
     const matchesArea = filterArea === "todas" || pregunta.area === filterArea;
     const matchesCurso =
       filterCurso === "todos" || pregunta.curso === filterCurso;
+    const matchesNivelCognitivo =
+      filterNivelCognitivo === "todos" ||
+      pregunta.nivelCognitivo === filterNivelCognitivo;
 
-    return matchesSearch && matchesArea && matchesCurso;
+    return (
+      matchesSearch && matchesArea && matchesCurso && matchesNivelCognitivo
+    );
   });
 
   // Calcular estadísticas
@@ -50,10 +61,13 @@ const Preguntas = () => {
     (sum, p) => sum + p.puntaje,
     0
   );
-  const promedioPuntaje =
-    preguntasFiltradas.length > 0
-      ? totalPuntaje / preguntasFiltradas.length
-      : 0;
+
+  // Estadísticas por nivel cognitivo
+  const estadisticasNivelCognitivo = nivelesCognitivosUnicos.map((nivel) => ({
+    nivel,
+    cantidad: preguntasFiltradas.filter((p) => p.nivelCognitivo === nivel)
+      .length,
+  }));
 
   if (isLoading) {
     return (
@@ -103,6 +117,22 @@ const Preguntas = () => {
     return "text-red-600 bg-red-50";
   };
 
+  // Función para obtener color del nivel cognitivo basado en Bloom
+  const getNivelCognitivoColor = (nivel: string) => {
+    const nivelLower = nivel.toLowerCase();
+
+    // Colores específicos para niveles de Bloom
+    if (nivelLower.includes("recordar")) return "bg-gray-100 text-gray-800";
+    if (nivelLower.includes("comprender")) return "bg-blue-100 text-blue-800";
+    if (nivelLower.includes("aplicar")) return "bg-green-100 text-green-800";
+    if (nivelLower.includes("analizar")) return "bg-yellow-100 text-yellow-800";
+    if (nivelLower.includes("evaluar")) return "bg-orange-100 text-orange-800";
+    if (nivelLower.includes("crear")) return "bg-purple-100 text-purple-800";
+
+    // Color por defecto para otros niveles
+    return "bg-indigo-100 text-indigo-800";
+  };
+
   return (
     <div className="w-full max-w-full mx-auto">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
@@ -138,15 +168,15 @@ const Preguntas = () => {
           </div>
           <input
             type="text"
-            placeholder="Buscar por curso, tema, subtema o competencia..."
+            placeholder="Buscar por curso, tema, competencia o nivel cognitivo..."
             className="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md leading-5 bg-white placeholder-gray-500 focus:outline-none focus:placeholder-gray-400 focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
           />
         </div>
 
-        {/* Filtros por área y curso */}
-        <div className="flex flex-col sm:flex-row gap-4">
+        {/* Filtros por área, curso y nivel cognitivo */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <select
             value={filterArea}
             onChange={(e) => setFilterArea(e.target.value)}
@@ -167,6 +197,19 @@ const Preguntas = () => {
             {cursosUnicos.map((curso) => (
               <option key={curso} value={curso}>
                 {curso}
+              </option>
+            ))}
+          </select>
+
+          <select
+            value={filterNivelCognitivo}
+            onChange={(e) => setFilterNivelCognitivo(e.target.value)}
+            className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+          >
+            <option value="todos">Todos los niveles</option>
+            {nivelesCognitivosUnicos.map((nivel) => (
+              <option key={nivel} value={nivel}>
+                {nivel}
               </option>
             ))}
           </select>
@@ -220,20 +263,46 @@ const Preguntas = () => {
         </div>
         <div className="bg-white p-4 rounded-lg shadow border border-gray-100">
           <div className="flex items-center">
-            <div className="h-8 w-8 bg-purple-100 rounded-lg flex items-center justify-center">
-              <span className="text-purple-600 font-semibold">⌀</span>
-            </div>
+            <Brain className="h-8 w-8 text-purple-600" />
             <div className="ml-3">
               <p className="text-sm font-medium text-gray-500">
-                Puntaje Promedio
+                Niveles Cognitivos
               </p>
               <p className="text-xl font-semibold text-gray-900">
-                {promedioPuntaje.toFixed(1)}
+                {filterNivelCognitivo === "todos"
+                  ? nivelesCognitivosUnicos.length
+                  : 1}
               </p>
             </div>
           </div>
         </div>
       </div>
+
+      {/* Distribución por nivel cognitivo */}
+      {estadisticasNivelCognitivo.length > 0 && (
+        <div className="mb-6 bg-white p-4 rounded-lg shadow border border-gray-100">
+          <h3 className="text-sm font-medium text-gray-900 mb-3 flex items-center">
+            <Brain className="h-4 w-4 mr-2" />
+            Distribución por Nivel Cognitivo
+          </h3>
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2">
+            {estadisticasNivelCognitivo.map(({ nivel, cantidad }) => (
+              <div key={nivel} className="text-center">
+                <div
+                  className={`px-2 py-1 rounded-full text-xs font-medium ${getNivelCognitivoColor(
+                    nivel
+                  )}`}
+                >
+                  {nivel}
+                </div>
+                <div className="text-sm font-semibold text-gray-900 mt-1">
+                  {cantidad}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Alerta de control de puntajes */}
       {totalPuntaje !== 100 && (
@@ -263,7 +332,10 @@ const Preguntas = () => {
       <div className="bg-white shadow rounded-lg overflow-hidden border border-gray-100">
         {preguntasFiltradas.length === 0 ? (
           <div className="p-4 text-center text-gray-500">
-            {searchTerm || filterArea !== "todas" || filterCurso !== "todos"
+            {searchTerm ||
+            filterArea !== "todas" ||
+            filterCurso !== "todos" ||
+            filterNivelCognitivo !== "todos"
               ? "No se encontraron preguntas que coincidan con los filtros"
               : "No hay preguntas registradas"}
           </div>
@@ -277,11 +349,14 @@ const Preguntas = () => {
               <div className="xl:col-span-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                 Tema
               </div>
-              <div className="xl:col-span-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+              <div className="xl:col-span-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                 Competencia
               </div>
               <div className="xl:col-span-1 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                 Área
+              </div>
+              <div className="xl:col-span-1 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                Nivel Cognitivo
               </div>
               <div className="xl:col-span-1 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                 Puntaje
@@ -308,20 +383,26 @@ const Preguntas = () => {
                   </div>
                   <div className="xl:col-span-2">
                     <div className="text-sm text-gray-900">{pregunta.tema}</div>
-                    <div className="text-xs text-gray-500">
-                      {pregunta.subtema}
-                    </div>
                   </div>
-                  <div className="xl:col-span-3">
+                  <div className="xl:col-span-2">
                     <div className="text-sm text-gray-900 line-clamp-2">
-                      {pregunta.competencia.length > 100
-                        ? `${pregunta.competencia.substring(0, 100)}...`
+                      {pregunta.competencia.length > 80
+                        ? `${pregunta.competencia.substring(0, 80)}...`
                         : pregunta.competencia}
                     </div>
                   </div>
                   <div className="xl:col-span-1">
                     <span className="px-2 py-1 text-xs font-semibold rounded-full bg-blue-100 text-blue-800">
                       {pregunta.area}
+                    </span>
+                  </div>
+                  <div className="xl:col-span-1">
+                    <span
+                      className={`px-2 py-1 text-xs font-semibold rounded-full ${getNivelCognitivoColor(
+                        pregunta.nivelCognitivo
+                      )}`}
+                    >
+                      {pregunta.nivelCognitivo}
                     </span>
                   </div>
                   <div className="xl:col-span-1">
@@ -361,9 +442,6 @@ const Preguntas = () => {
                       <div className="text-sm text-gray-600">
                         {pregunta.tema}
                       </div>
-                      <div className="text-xs text-gray-500">
-                        {pregunta.subtema}
-                      </div>
                     </div>
                     <div className="flex space-x-1">
                       <Link
@@ -388,9 +466,16 @@ const Preguntas = () => {
                     </div>
                   </div>
                   <div className="flex items-center justify-between">
-                    <div className="flex space-x-2">
+                    <div className="flex space-x-2 flex-wrap">
                       <span className="px-2 py-1 text-xs font-semibold rounded-full bg-blue-100 text-blue-800">
                         {pregunta.area}
+                      </span>
+                      <span
+                        className={`px-2 py-1 text-xs font-semibold rounded-full ${getNivelCognitivoColor(
+                          pregunta.nivelCognitivo
+                        )}`}
+                      >
+                        {pregunta.nivelCognitivo}
                       </span>
                       <span
                         className={`px-2 py-1 text-xs font-semibold rounded-full ${getPuntajeColor(
@@ -483,6 +568,7 @@ const Preguntas = () => {
       <ImportPreguntasModal
         isOpen={showImportModal}
         onClose={() => setShowImportModal(false)}
+        modo="banco"
       />
     </div>
   );

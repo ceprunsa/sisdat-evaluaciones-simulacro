@@ -17,9 +17,209 @@ import type {
   CalificacionesHookReturn,
   MatrizCurso,
   RetroalimentacionCurso,
+  Alternativa,
 } from "../types";
 import { useMemo } from "react";
 import toast from "react-hot-toast";
+
+export const useCalificaciones = (): CalificacionesHookReturn => {
+  const queryClient = useQueryClient();
+  const { user } = useAuth();
+
+  const calificacionesQuery = useQuery({
+    queryKey: ["calificaciones"],
+    queryFn: getCalificaciones,
+  });
+
+  const calificacionByIdQuery = (id?: string) => {
+    return useQuery({
+      queryKey: ["calificaciones", id],
+      queryFn: () => getCalificacionById(id),
+      enabled: !!id,
+    });
+  };
+
+  const saveCalificacion = async (
+    calificacionData: Partial<Calificacion>
+  ): Promise<Partial<Calificacion>> => {
+    if (
+      !calificacionData.postulanteId ||
+      !calificacionData.examenSimulacroId ||
+      !calificacionData.respuestas
+    ) {
+      throw new Error("Postulante, examen y respuestas son requeridos");
+    }
+
+    try {
+      // Obtener preguntas del examen para calcular calificación
+      const examenDoc = await getDoc(
+        doc(db, "examenes", calificacionData.examenSimulacroId)
+      );
+      if (!examenDoc.exists()) {
+        throw new Error("Examen no encontrado");
+      }
+
+      const examenData = examenDoc.data();
+      const preguntasPromises = examenData.preguntas.map(
+        async (preguntaId: string) => {
+          const preguntaDoc = await getDoc(doc(db, "preguntas", preguntaId));
+          return preguntaDoc.exists()
+            ? { id: preguntaDoc.id, ...preguntaDoc.data() }
+            : null;
+        }
+      );
+      const preguntas = (await Promise.all(preguntasPromises)).filter(Boolean);
+
+      // Calcular calificación final
+      const calificacionFinal = calificacionData.respuestas.reduce(
+        (total, respuesta, index) => {
+          return (
+            total +
+            (respuesta === preguntas[index]?.alternativaCorrecta
+              ? preguntas[index]?.puntaje || 0
+              : 0)
+          );
+        },
+        0
+      );
+
+      // Calcular matriz por curso y retroalimentación
+      const { matrizPorCurso, retroalimentacion } =
+        calcularMatrizYRetroalimentacion(
+          calificacionData.respuestas as Alternativa[],
+          preguntas
+        );
+
+      const calificacionCompleta = {
+        postulanteId: calificacionData.postulanteId,
+        examenSimulacroId: calificacionData.examenSimulacroId,
+        respuestas: calificacionData.respuestas,
+        calificacionFinal,
+        matrizPorCurso,
+        retroalimentacion,
+        fechaExamen: calificacionData.fechaExamen || new Date().toISOString(),
+        createdAt: new Date().toISOString(),
+        createdBy: user?.email || "system",
+      };
+
+      if (calificacionData.id) {
+        // Actualizar calificación existente
+        const calificacionRef = doc(db, "calificaciones", calificacionData.id);
+        await updateDoc(calificacionRef, calificacionCompleta);
+        toast.success("Calificación actualizada exitosamente");
+      } else {
+        // Crear nueva calificación
+        await addDoc(collection(db, "calificaciones"), calificacionCompleta);
+        toast.success("Calificación creada exitosamente");
+      }
+
+      return calificacionData;
+    } catch (error) {
+      console.error("Error en saveCalificacion:", error);
+      toast.error(
+        error instanceof Error ? error.message : "Error al guardar calificación"
+      );
+      throw error;
+    }
+  };
+
+  const deleteCalificacion = async (id: string): Promise<string> => {
+    try {
+      await deleteDoc(doc(db, "calificaciones", id));
+      toast.success("Calificación eliminada exitosamente");
+      return id;
+    } catch (error) {
+      console.error("Error al eliminar calificación:", error);
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : "Error al eliminar calificación"
+      );
+      throw error;
+    }
+  };
+
+  const exportToExcel = async (
+    calificaciones: Calificacion[]
+  ): Promise<void> => {
+    try {
+      // Aquí iría la lógica real de exportación a Excel
+      // Por ahora, simularemos la exportación
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+
+      // Crear datos para exportar
+      const dataToExport = calificaciones.map((cal) => ({
+        DNI: cal.postulante?.dni,
+        Apellidos: cal.postulante?.apellidos,
+        Nombres: cal.postulante?.nombres,
+        Carrera: cal.postulante?.carreraPostulacion,
+        Especialidad: cal.postulante?.especialidad || "",
+        Correo: cal.postulante?.correoCeprunsa,
+        Examen: cal.examenSimulacro?.nombre,
+        Proceso: cal.examenSimulacro?.proceso,
+        Área: cal.examenSimulacro?.area,
+        "Calificación Final": cal.calificacionFinal,
+        "Fecha Examen": new Date(cal.fechaExamen).toLocaleDateString(),
+        "Respuestas Correctas": cal.respuestas.filter(
+          (r, i) =>
+            r === cal.examenSimulacro?.preguntasData?.[i]?.alternativaCorrecta
+        ).length,
+        "Respuestas Incorrectas": cal.respuestas.filter(
+          (r, i) =>
+            r !== cal.examenSimulacro?.preguntasData?.[i]?.alternativaCorrecta
+        ).length,
+      }));
+
+      console.log("Datos para exportar:", dataToExport);
+      toast.success(
+        `${calificaciones.length} calificaciones exportadas exitosamente`
+      );
+    } catch (error) {
+      console.error("Error al exportar a Excel:", error);
+      toast.error(
+        error instanceof Error ? error.message : "Error al exportar a Excel"
+      );
+      throw error;
+    }
+  };
+
+  const saveMutation = useMutation({
+    mutationFn: saveCalificacion,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["calificaciones"] });
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: deleteCalificacion,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["calificaciones"] });
+    },
+  });
+
+  const exportMutation = useMutation({
+    mutationFn: exportToExcel,
+  });
+
+  const calificaciones = useMemo(
+    () => calificacionesQuery.data || [],
+    [calificacionesQuery.data]
+  );
+
+  return {
+    calificaciones,
+    isLoading: calificacionesQuery.isLoading,
+    isError: calificacionesQuery.isError,
+    error: calificacionesQuery.error,
+    calificacionByIdQuery,
+    saveCalificacion: saveMutation.mutate,
+    deleteCalificacion: deleteMutation.mutate,
+    exportToExcel: exportMutation.mutate,
+    isSaving: saveMutation.isPending,
+    isDeleting: deleteMutation.isPending,
+    isExporting: exportMutation.isPending,
+  };
+};
 
 // Obtener todas las calificaciones con datos poblados
 const getCalificaciones = async (): Promise<Calificacion[]> => {
@@ -154,7 +354,7 @@ const getCalificacionById = async (
 
 // Calcular matriz por curso y retroalimentación
 const calcularMatrizYRetroalimentacion = (
-  respuestas: number[],
+  respuestas: Alternativa[],
   preguntas: any[]
 ) => {
   const matrizPorCurso: MatrizCurso[] = [];
@@ -173,7 +373,8 @@ const calcularMatrizYRetroalimentacion = (
 
     preguntasCurso.forEach((pregunta, _index) => {
       const preguntaIndex = preguntas.findIndex((p) => p.id === pregunta.id);
-      const esCorrecta = respuestas[preguntaIndex] === 1;
+      const esCorrecta =
+        respuestas[preguntaIndex] === pregunta.alternativaCorrecta;
 
       puntajeMaximo += pregunta.puntaje;
 
@@ -181,19 +382,17 @@ const calcularMatrizYRetroalimentacion = (
         correctas++;
         puntajeObtenido += pregunta.puntaje;
         if (
-          pregunta.competencia?.mensajeComplida &&
-          !competenciasCumplidas.includes(pregunta.competencia.mensajeComplida)
+          pregunta.mensajeComplida &&
+          !competenciasCumplidas.includes(pregunta.mensajeComplida)
         ) {
-          competenciasCumplidas.push(pregunta.competencia.mensajeComplida);
+          competenciasCumplidas.push(pregunta.mensajeComplida);
         }
       } else {
         if (
-          pregunta.competencia?.mensajeNoComplida &&
-          !competenciasNoCumplidas.includes(
-            pregunta.competencia.mensajeNoComplida
-          )
+          pregunta.mensajeNoComplida &&
+          !competenciasNoCumplidas.includes(pregunta.mensajeNoComplida)
         ) {
-          competenciasNoCumplidas.push(pregunta.competencia.mensajeNoComplida);
+          competenciasNoCumplidas.push(pregunta.mensajeNoComplida);
         }
       }
     });
@@ -215,190 +414,4 @@ const calcularMatrizYRetroalimentacion = (
   });
 
   return { matrizPorCurso, retroalimentacion };
-};
-
-export const useCalificaciones = (): CalificacionesHookReturn => {
-  const queryClient = useQueryClient();
-  const { user } = useAuth();
-
-  const calificacionesQuery = useQuery({
-    queryKey: ["calificaciones"],
-    queryFn: getCalificaciones,
-  });
-
-  const calificacionByIdQuery = (id?: string) => {
-    return useQuery({
-      queryKey: ["calificaciones", id],
-      queryFn: () => getCalificacionById(id),
-      enabled: !!id,
-    });
-  };
-
-  const saveCalificacion = async (
-    calificacionData: Partial<Calificacion>
-  ): Promise<Partial<Calificacion>> => {
-    if (
-      !calificacionData.postulanteId ||
-      !calificacionData.examenSimulacroId ||
-      !calificacionData.respuestas
-    ) {
-      throw new Error("Postulante, examen y respuestas son requeridos");
-    }
-
-    try {
-      // Obtener preguntas del examen para calcular calificación
-      const examenDoc = await getDoc(
-        doc(db, "examenes", calificacionData.examenSimulacroId)
-      );
-      if (!examenDoc.exists()) {
-        throw new Error("Examen no encontrado");
-      }
-
-      const examenData = examenDoc.data();
-      const preguntasPromises = examenData.preguntas.map(
-        async (preguntaId: string) => {
-          const preguntaDoc = await getDoc(doc(db, "preguntas", preguntaId));
-          return preguntaDoc.exists()
-            ? { id: preguntaDoc.id, ...preguntaDoc.data() }
-            : null;
-        }
-      );
-      const preguntas = (await Promise.all(preguntasPromises)).filter(Boolean);
-
-      // Calcular calificación final
-      const calificacionFinal = calificacionData.respuestas.reduce(
-        (total, respuesta, index) => {
-          return total + (respuesta === 1 ? preguntas[index]?.puntaje || 0 : 0);
-        },
-        0
-      );
-
-      // Calcular matriz por curso y retroalimentación
-      const { matrizPorCurso, retroalimentacion } =
-        calcularMatrizYRetroalimentacion(
-          calificacionData.respuestas,
-          preguntas
-        );
-
-      const calificacionCompleta = {
-        postulanteId: calificacionData.postulanteId,
-        examenSimulacroId: calificacionData.examenSimulacroId,
-        respuestas: calificacionData.respuestas,
-        calificacionFinal,
-        matrizPorCurso,
-        retroalimentacion,
-        fechaExamen: calificacionData.fechaExamen || new Date().toISOString(),
-        createdAt: new Date().toISOString(),
-        createdBy: user?.email || "system",
-      };
-
-      if (calificacionData.id) {
-        // Actualizar calificación existente
-        const calificacionRef = doc(db, "calificaciones", calificacionData.id);
-        await updateDoc(calificacionRef, calificacionCompleta);
-        toast.success("Calificación actualizada exitosamente");
-      } else {
-        // Crear nueva calificación
-        await addDoc(collection(db, "calificaciones"), calificacionCompleta);
-        toast.success("Calificación creada exitosamente");
-      }
-
-      return calificacionData;
-    } catch (error) {
-      console.error("Error en saveCalificacion:", error);
-      toast.error(
-        error instanceof Error ? error.message : "Error al guardar calificación"
-      );
-      throw error;
-    }
-  };
-
-  const deleteCalificacion = async (id: string): Promise<string> => {
-    try {
-      await deleteDoc(doc(db, "calificaciones", id));
-      toast.success("Calificación eliminada exitosamente");
-      return id;
-    } catch (error) {
-      console.error("Error al eliminar calificación:", error);
-      toast.error(
-        error instanceof Error
-          ? error.message
-          : "Error al eliminar calificación"
-      );
-      throw error;
-    }
-  };
-
-  const exportToExcel = async (
-    calificaciones: Calificacion[]
-  ): Promise<void> => {
-    try {
-      // Aquí iría la lógica real de exportación a Excel
-      // Por ahora, simularemos la exportación
-      await new Promise((resolve) => setTimeout(resolve, 2000));
-
-      // Crear datos para exportar
-      const dataToExport = calificaciones.map((cal) => ({
-        DNI: cal.postulante?.dni,
-        Apellidos: cal.postulante?.apellidos,
-        Nombres: cal.postulante?.nombres,
-        Carrera: cal.postulante?.carreraPostulacion,
-        Especialidad: cal.postulante?.especialidad || "",
-        Correo: cal.postulante?.correoCeprunsa,
-        Examen: cal.examenSimulacro?.nombre,
-        Proceso: cal.examenSimulacro?.proceso,
-        Área: cal.examenSimulacro?.area,
-        "Calificación Final": cal.calificacionFinal,
-        "Fecha Examen": new Date(cal.fechaExamen).toLocaleDateString(),
-        "Respuestas Correctas": cal.respuestas.filter((r) => r === 1).length,
-        "Respuestas Incorrectas": cal.respuestas.filter((r) => r === 0).length,
-      }));
-
-      console.log("Datos para exportar:", dataToExport);
-      toast.success(
-        `${calificaciones.length} calificaciones exportadas exitosamente`
-      );
-    } catch (error) {
-      console.error("Error al exportar a Excel:", error);
-      toast.error("Error al exportar a Excel");
-      throw error;
-    }
-  };
-
-  const saveCalificacionMutation = useMutation({
-    mutationFn: saveCalificacion,
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["calificaciones"] });
-    },
-  });
-
-  const deleteCalificacionMutation = useMutation({
-    mutationFn: deleteCalificacion,
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["calificaciones"] });
-    },
-  });
-
-  const exportToExcelMutation = useMutation({
-    mutationFn: exportToExcel,
-  });
-
-  const memoizedCalificacionByIdQuery = useMemo(
-    () => calificacionByIdQuery,
-    []
-  );
-
-  return {
-    calificaciones: calificacionesQuery.data || [],
-    isLoading: calificacionesQuery.isLoading,
-    isError: calificacionesQuery.isError,
-    error: calificacionesQuery.error as Error | null,
-    calificacionByIdQuery: memoizedCalificacionByIdQuery,
-    saveCalificacion: saveCalificacionMutation.mutate,
-    deleteCalificacion: deleteCalificacionMutation.mutate,
-    exportToExcel: exportToExcelMutation.mutate,
-    isSaving: saveCalificacionMutation.isPending,
-    isDeleting: deleteCalificacionMutation.isPending,
-    isExporting: exportToExcelMutation.isPending,
-  };
 };
