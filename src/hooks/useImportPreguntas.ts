@@ -13,6 +13,7 @@ import { useAuth } from "./useAuth";
 import { useQueryClient } from "@tanstack/react-query";
 import type { Pregunta, PreguntaEnExamen } from "../types";
 import toast from "react-hot-toast";
+import Decimal from "decimal.js";
 
 interface ImportResult {
   exitosos: number;
@@ -94,8 +95,11 @@ export const useImportPreguntas = () => {
       errors.push("Campo 'mensajeNoComplida' es requerido y debe ser texto");
     }
 
-    // Validación de puntaje
-    if (typeof pregunta.puntaje !== "number" || pregunta.puntaje <= 0) {
+    // Validación de puntaje con Decimal
+    if (
+      typeof pregunta.puntaje !== "number" ||
+      new Decimal(pregunta.puntaje).lessThanOrEqualTo(0)
+    ) {
       errors.push("Campo 'puntaje' debe ser un número mayor a 0");
     }
 
@@ -119,15 +123,25 @@ export const useImportPreguntas = () => {
     preguntasNuevas: any[],
     preguntasExistentes: Pregunta[]
   ): boolean => {
-    const totalNuevas = preguntasNuevas.reduce(
-      (sum, p) => sum + (p.puntaje || 0),
-      0
+    const totalNuevasDecimal = preguntasNuevas.reduce(
+      (totalDecimal, pregunta) => {
+        const puntajePregunta = new Decimal(pregunta.puntaje || 0);
+        return totalDecimal.plus(puntajePregunta);
+      },
+      new Decimal(0)
     );
-    const totalExistentes = preguntasExistentes.reduce(
-      (sum, p) => sum + p.puntaje,
-      0
+
+    const totalExistentesDecimal = preguntasExistentes.reduce(
+      (totalDecimal, pregunta) => {
+        const puntajePregunta = new Decimal(pregunta.puntaje || 0);
+        return totalDecimal.plus(puntajePregunta);
+      },
+      new Decimal(0)
     );
-    return totalNuevas + totalExistentes <= 100;
+
+    const totalCombinado = totalNuevasDecimal.plus(totalExistentesDecimal);
+    console.log(totalCombinado.toNumber());
+    return totalCombinado.lessThanOrEqualTo(new Decimal(100));
   };
 
   const validateAreaConsistencia = (
@@ -186,22 +200,34 @@ export const useImportPreguntas = () => {
         );
       }
 
-      // Validar total de puntajes
+      // Validar total de puntajes con Decimal
       if (!validateTotalPuntajes(preguntasValidas, preguntasExistentes)) {
-        const totalNuevas = preguntasValidas.reduce(
-          (sum, p) => sum + p.puntaje,
-          0
+        const totalNuevasDecimal = preguntasValidas.reduce(
+          (totalDecimal, pregunta) => {
+            const puntajePregunta = new Decimal(pregunta.puntaje || 0);
+            return totalDecimal.plus(puntajePregunta);
+          },
+          new Decimal(0)
         );
-        const totalExistentes = preguntasExistentes.reduce(
-          (sum, p) => sum + p.puntaje,
-          0
+
+        const totalExistentesDecimal = preguntasExistentes.reduce(
+          (totalDecimal, pregunta) => {
+            const puntajePregunta = new Decimal(pregunta.puntaje || 0);
+            return totalDecimal.plus(puntajePregunta);
+          },
+          new Decimal(0)
         );
+
+        const totalCombinadoDecimal = totalNuevasDecimal.plus(
+          totalExistentesDecimal
+        );
+
         throw new Error(
-          `El total de puntajes excedería 100. Existentes: ${totalExistentes.toFixed(
-            8
-          )}, Nuevas: ${totalNuevas.toFixed(8)}, Total: ${(
-            totalExistentes + totalNuevas
-          ).toFixed(8)}`
+          `El total de puntajes excedería 100. Existentes: ${totalExistentesDecimal.toFixed(
+            2
+          )}, Nuevas: ${totalNuevasDecimal.toFixed(
+            2
+          )}, Total: ${totalCombinadoDecimal.toFixed(2)}`
         );
       }
 
@@ -318,12 +344,23 @@ export const useImportPreguntas = () => {
       queryClient.invalidateQueries({ queryKey: ["examen", examenId] });
       queryClient.invalidateQueries({ queryKey: ["preguntas"] });
 
+      // Calcular total final para el mensaje
+      const totalFinalDecimal = preguntasExistentes
+        .reduce((totalDecimal, pregunta) => {
+          return totalDecimal.plus(new Decimal(pregunta.puntaje || 0));
+        }, new Decimal(0))
+        .plus(
+          preguntasParaAgregar.reduce((totalDecimal, pregunta) => {
+            return totalDecimal.plus(new Decimal(pregunta.puntaje || 0));
+          }, new Decimal(0))
+        );
+
       toast.success(
         `Importación completada: ${
           result.exitosos
-        } preguntas agregadas al examen y al banco de preguntas${
-          result.errores > 0 ? `, ${result.errores} errores` : ""
-        }`
+        } preguntas agregadas al examen y al banco de preguntas. Total de puntajes: ${totalFinalDecimal.toFixed(
+          2
+        )}/100.00${result.errores > 0 ? `, ${result.errores} errores` : ""}`
       );
     } catch (error) {
       console.error("Error en importación:", error);
@@ -422,12 +459,20 @@ export const useImportPreguntas = () => {
       // Invalidar cache para refrescar la lista de preguntas
       queryClient.invalidateQueries({ queryKey: ["preguntas"] });
 
+      // Calcular total de puntajes para el mensaje
+      const totalPuntajesDecimal = preguntasValidas.reduce(
+        (totalDecimal, pregunta) => {
+          return totalDecimal.plus(new Decimal(pregunta.puntaje || 0));
+        },
+        new Decimal(0)
+      );
+
       toast.success(
         `Importación completada: ${
           result.exitosos
-        } preguntas agregadas al banco de preguntas${
-          result.errores > 0 ? `, ${result.errores} errores` : ""
-        }`
+        } preguntas agregadas al banco de preguntas. Total de puntajes: ${totalPuntajesDecimal.toFixed(
+          2
+        )}${result.errores > 0 ? `, ${result.errores} errores` : ""}`
       );
     } catch (error) {
       console.error("Error en importación:", error);

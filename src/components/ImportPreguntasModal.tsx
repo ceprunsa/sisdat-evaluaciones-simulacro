@@ -3,6 +3,7 @@
 import { useState, useRef, type ChangeEvent, type DragEvent } from "react";
 import { useImportPreguntas } from "../hooks/useImportPreguntas";
 import type { Pregunta, Area, Alternativa, Curso } from "../types";
+import Decimal from "decimal.js";
 import {
   X,
   Upload,
@@ -40,13 +41,26 @@ const ImportPreguntasModal = ({
   const [dragActive, setDragActive] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Calcular puntaje disponible del examen específico
-  const puntajeUsado = preguntasExistentes.reduce(
-    (sum, p) => sum + p.puntaje,
-    0
-  );
-  const puntajeDisponible = 100 - puntajeUsado;
+  // ✅ Calcular puntaje usado con precisión decimal
+  const puntajeUsado = preguntasExistentes
+    .reduce((totalDecimal, pregunta) => {
+      const puntajePregunta = new Decimal(pregunta.puntaje || 0);
+      return totalDecimal.plus(puntajePregunta);
+    }, new Decimal(0))
+    .toNumber();
+
+  // ✅ Calcular puntaje disponible con precisión decimal
+  const puntajeDisponible = new Decimal(100)
+    .minus(new Decimal(puntajeUsado))
+    .toNumber();
+
   const preguntasDisponibles = 80 - preguntasExistentes.length;
+
+  // ✅ Calcular porcentaje de progreso con precisión decimal
+  const porcentajePreguntas = new Decimal(preguntasExistentes.length)
+    .dividedBy(new Decimal(80))
+    .times(new Decimal(100))
+    .toNumber();
 
   const handleDrag = (e: DragEvent<HTMLDivElement>) => {
     e.preventDefault();
@@ -269,7 +283,7 @@ const ImportPreguntasModal = ({
                 <div>
                   <span className="text-blue-700">Puntaje usado:</span>
                   <div className="font-semibold text-blue-900">
-                    {puntajeUsado.toFixed(2)} / 100
+                    {new Decimal(puntajeUsado).toFixed(2)} / 100
                   </div>
                 </div>
                 <div>
@@ -279,16 +293,14 @@ const ImportPreguntasModal = ({
                       puntajeDisponible < 0 ? "text-red-600" : "text-green-600"
                     }`}
                   >
-                    {puntajeDisponible.toFixed(2)}
+                    {new Decimal(puntajeDisponible).toFixed(2)}
                   </div>
                 </div>
               </div>
               <div className="mt-3 space-y-2">
                 <div className="flex justify-between text-xs text-blue-700">
                   <span>Progreso de preguntas</span>
-                  <span>
-                    {Math.round((preguntasExistentes.length / 80) * 100)}%
-                  </span>
+                  <span>{new Decimal(porcentajePreguntas).toFixed(0)}%</span>
                 </div>
                 <div className="w-full bg-blue-200 rounded-full h-2">
                   <div
@@ -298,10 +310,7 @@ const ImportPreguntasModal = ({
                         : "bg-blue-600"
                     }`}
                     style={{
-                      width: `${Math.min(
-                        (preguntasExistentes.length / 80) * 100,
-                        100
-                      )}%`,
+                      width: `${Math.min(porcentajePreguntas, 100)}%`,
                     }}
                   ></div>
                 </div>
@@ -465,7 +474,7 @@ const ImportPreguntasModal = ({
                   <div className="w-full max-w-md mx-auto">
                     <div className="flex justify-between text-sm text-gray-600 mb-1">
                       <span>Progreso</span>
-                      <span>{progress.toFixed(0)}%</span>
+                      <span>{new Decimal(progress).toFixed(0)}%</span>
                     </div>
                     <div className="w-full bg-gray-200 rounded-full h-2">
                       <div
