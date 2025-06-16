@@ -144,7 +144,7 @@ export interface RetroalimentacionCurso {
   competenciasNoCumplidas: string[];
 }
 
-// Calificación
+// Calificación (ACTUALIZADA - incluye preguntasAcertadas)
 export interface Calificacion {
   id: string;
   postulanteId: string;
@@ -152,6 +152,7 @@ export interface Calificacion {
   examenSimulacroId: string;
   examenSimulacro?: ExamenSimulacro; // Populated field
   respuestas: Alternativa[]; // Array de 80 valores: "A", "B", "C", "D", "E"
+  preguntasAcertadas: number; // Cantidad de preguntas correctas (autogenerado)
   calificacionFinal: number; // Suma de correctas y sus valores (autogenerado)
   matrizPorCurso: MatrizCurso[]; // Matriz de correctas/incorrectas por curso (autogenerado)
   retroalimentacion: RetroalimentacionCurso[]; // Mensajes por curso (autogenerado)

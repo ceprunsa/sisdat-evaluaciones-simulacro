@@ -306,13 +306,10 @@ const ExamenDetalle = () => {
               <div className="lg:col-span-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                 Curso
               </div>
-              <div className="lg:col-span-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+              <div className="lg:col-span-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                 Tema
               </div>
-              <div className="lg:col-span-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Subtema
-              </div>
-              <div className="lg:col-span-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+              <div className="lg:col-span-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                 Competencia
               </div>
               <div className="lg:col-span-1 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -346,15 +343,11 @@ const ExamenDetalle = () => {
                       {pregunta.curso}
                     </div>
                   </div>
-                  <div className="lg:col-span-2">
+                  <div className="lg:col-span-3">
                     <div className="text-sm text-gray-900">{pregunta.tema}</div>
                   </div>
-                  <div className="lg:col-span-2">
-                    <div className="text-sm text-gray-900">
-                      {pregunta.subtema}
-                    </div>
-                  </div>
-                  <div className="lg:col-span-3">
+
+                  <div className="lg:col-span-4">
                     <div className="text-sm text-gray-900 line-clamp-2">
                       {pregunta.competencia}
                     </div>
@@ -390,7 +383,7 @@ const ExamenDetalle = () => {
                           {pregunta.curso}
                         </div>
                         <div className="text-sm text-gray-600">
-                          {pregunta.tema} - {pregunta.subtema}
+                          {pregunta.tema}
                         </div>
                       </div>
                     </div>

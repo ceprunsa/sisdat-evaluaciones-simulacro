@@ -19,6 +19,7 @@ import ExamenForm from "./pages/ExamenForm";
 import ExamenDetalle from "./pages/ExamenDetalle";
 import Calificaciones from "./pages/Calificaciones";
 import CalificacionForm from "./pages/CalificacionForm";
+import CalificacionDetalle from "./pages/CalificacionDetalle";
 import Estadisticas from "./pages/Estadisticas";
 
 export const router = createBrowserRouter([
@@ -174,6 +175,22 @@ export const router = createBrowserRouter([
       },
       {
         path: "calificaciones/:id",
+        element: (
+          <ProtectedRoute>
+            <CalificacionForm />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: "calificaciones/:id/detalle",
+        element: (
+          <ProtectedRoute>
+            <CalificacionDetalle />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: "calificaciones/:id/edit",
         element: (
           <ProtectedRoute>
             <CalificacionForm />

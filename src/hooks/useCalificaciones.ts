@@ -21,6 +21,7 @@ import type {
 } from "../types";
 import { useMemo } from "react";
 import toast from "react-hot-toast";
+import Decimal from "decimal.js";
 
 export const useCalificaciones = (): CalificacionesHookReturn => {
   const queryClient = useQueryClient();
@@ -70,20 +71,29 @@ export const useCalificaciones = (): CalificacionesHookReturn => {
       );
       const preguntas = (await Promise.all(preguntasPromises)).filter(Boolean);
 
-      // Calcular calificación final
-      const calificacionFinal = calificacionData.respuestas.reduce(
-        (total, respuesta, index) => {
-          return (
-            total +
-            (respuesta === preguntas[index]?.alternativaCorrecta
-              ? preguntas[index]?.puntaje || 0
-              : 0)
-          );
-        },
-        0
-      );
+      // ✅ Calcular calificación final con Decimal.js para precisión exacta
+      let calificacionFinalDecimal = new Decimal(0);
+      let preguntasAcertadas = 0;
 
-      // Calcular matriz por curso y retroalimentación
+      calificacionData.respuestas.forEach((respuesta, index) => {
+        const pregunta = preguntas[index];
+        if (pregunta) {
+          const esCorrecta = respuesta === pregunta.alternativaCorrecta;
+
+          if (esCorrecta) {
+            preguntasAcertadas++;
+            // ✅ Suma precisa con Decimal
+            const puntajePregunta = new Decimal(pregunta.puntaje || 0);
+            calificacionFinalDecimal =
+              calificacionFinalDecimal.plus(puntajePregunta);
+          }
+        }
+      });
+
+      // ✅ Convertir a number para almacenar en Firebase
+      const calificacionFinal = calificacionFinalDecimal.toNumber();
+
+      // Calcular matriz por curso y retroalimentación con Decimal
       const { matrizPorCurso, retroalimentacion } =
         calcularMatrizYRetroalimentacion(
           calificacionData.respuestas as Alternativa[],
@@ -94,13 +104,22 @@ export const useCalificaciones = (): CalificacionesHookReturn => {
         postulanteId: calificacionData.postulanteId,
         examenSimulacroId: calificacionData.examenSimulacroId,
         respuestas: calificacionData.respuestas,
-        calificacionFinal,
+        preguntasAcertadas, // ✅ Cantidad de preguntas correctas
+        calificacionFinal, // ✅ Puntaje calculado con precisión decimal
         matrizPorCurso,
         retroalimentacion,
         fechaExamen: calificacionData.fechaExamen || new Date().toISOString(),
         createdAt: new Date().toISOString(),
         createdBy: user?.email || "system",
       };
+
+      // ✅ Log de precisión para debugging
+      console.log(`Calificación calculada con precisión:`);
+      console.log(`- Preguntas acertadas: ${preguntasAcertadas}`);
+      console.log(
+        `- Puntaje final (Decimal): ${calificacionFinalDecimal.toString()}`
+      );
+      console.log(`- Puntaje final (almacenado): ${calificacionFinal}`);
 
       if (calificacionData.id) {
         // Actualizar calificación existente
@@ -158,16 +177,13 @@ export const useCalificaciones = (): CalificacionesHookReturn => {
         Examen: cal.examenSimulacro?.nombre,
         Proceso: cal.examenSimulacro?.proceso,
         Área: cal.examenSimulacro?.area,
+        "Preguntas Acertadas": cal.preguntasAcertadas, // ✅ Nuevo campo
+        "Preguntas Incorrectas": 80 - cal.preguntasAcertadas, // ✅ Calculado
+        "Porcentaje Aciertos": `${((cal.preguntasAcertadas / 80) * 100).toFixed(
+          1
+        )}%`, // ✅ Porcentaje
         "Calificación Final": cal.calificacionFinal,
         "Fecha Examen": new Date(cal.fechaExamen).toLocaleDateString(),
-        "Respuestas Correctas": cal.respuestas.filter(
-          (r, i) =>
-            r === cal.examenSimulacro?.preguntasData?.[i]?.alternativaCorrecta
-        ).length,
-        "Respuestas Incorrectas": cal.respuestas.filter(
-          (r, i) =>
-            r !== cal.examenSimulacro?.preguntasData?.[i]?.alternativaCorrecta
-        ).length,
       }));
 
       console.log("Datos para exportar:", dataToExport);
@@ -352,7 +368,6 @@ const getCalificacionById = async (
   return null;
 };
 
-// Calcular matriz por curso y retroalimentación
 const calcularMatrizYRetroalimentacion = (
   respuestas: Alternativa[],
   preguntas: any[]
@@ -366,8 +381,10 @@ const calcularMatrizYRetroalimentacion = (
   cursos.forEach((curso) => {
     const preguntasCurso = preguntas.filter((p) => p.curso === curso);
     let correctas = 0;
-    let puntajeObtenido = 0;
-    let puntajeMaximo = 0;
+
+    let puntajeObtenidoDecimal = new Decimal(0);
+    let puntajeMaximoDecimal = new Decimal(0);
+
     const competenciasCumplidas: string[] = [];
     const competenciasNoCumplidas: string[] = [];
 
@@ -376,11 +393,14 @@ const calcularMatrizYRetroalimentacion = (
       const esCorrecta =
         respuestas[preguntaIndex] === pregunta.alternativaCorrecta;
 
-      puntajeMaximo += pregunta.puntaje;
+      const puntajePregunta = new Decimal(pregunta.puntaje || 0);
+      puntajeMaximoDecimal = puntajeMaximoDecimal.plus(puntajePregunta);
 
       if (esCorrecta) {
         correctas++;
-        puntajeObtenido += pregunta.puntaje;
+
+        puntajeObtenidoDecimal = puntajeObtenidoDecimal.plus(puntajePregunta);
+
         if (
           pregunta.mensajeComplida &&
           !competenciasCumplidas.includes(pregunta.mensajeComplida)
@@ -402,8 +422,8 @@ const calcularMatrizYRetroalimentacion = (
       correctas,
       incorrectas: preguntasCurso.length - correctas,
       total: preguntasCurso.length,
-      puntajeObtenido,
-      puntajeMaximo,
+      puntajeObtenido: puntajeObtenidoDecimal.toNumber(),
+      puntajeMaximo: puntajeMaximoDecimal.toNumber(),
     });
 
     retroalimentacion.push({

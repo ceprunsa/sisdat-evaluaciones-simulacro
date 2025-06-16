@@ -5,6 +5,7 @@ import { Link } from "react-router-dom";
 import { useCalificaciones } from "../hooks/useCalificaciones";
 import type { Calificacion } from "../types";
 import { Plus, Trash2, Search, Eye, FileSpreadsheet } from "lucide-react";
+import ImportCalificacionesModal from "../components/ImportCalificacionesModal";
 
 const Calificaciones = () => {
   const {
@@ -19,6 +20,7 @@ const Calificaciones = () => {
   const [calificacionToDelete, setCalificacionToDelete] =
     useState<Calificacion | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
+  const [showImportModal, setShowImportModal] = useState(false);
 
   // Filtrar calificaciones por término de búsqueda
   const filteredCalificaciones = calificaciones.filter(
@@ -85,10 +87,13 @@ const Calificaciones = () => {
   };
 
   const getNotaColor = (nota: number, maxNota: number) => {
-    const percentage = (nota / maxNota) * 100;
-    if (percentage >= 80) return "text-green-600 bg-green-50";
-    if (percentage >= 60) return "text-yellow-600 bg-yellow-50";
-    return "text-red-600 bg-red-50";
+    const percentage = maxNota > 0 ? (nota / maxNota) * 100 : 0;
+    if (percentage >= 65) return "text-green-600 bg-green-50 border-green-200";
+    if (percentage >= 52)
+      return "text-yellow-600 bg-yellow-50 border-yellow-200";
+    if (percentage >= 45) return "text-red-600 bg-red-50 border-red-200";
+    //morado
+    return "text-purple-600 bg-purple-50 border-purple-200";
   };
 
   return (
@@ -108,6 +113,14 @@ const Calificaciones = () => {
               {isExporting ? "Exportando..." : "Exportar Excel"}
             </span>
             <span className="sm:hidden">{isExporting ? "..." : "Excel"}</span>
+          </button>
+          <button
+            onClick={() => setShowImportModal(true)}
+            className="btn btn-secondary inline-flex items-center"
+          >
+            <Plus size={18} className="mr-1 md:mr-2" />
+            <span className="hidden sm:inline">Importar JSON</span>
+            <span className="sm:hidden">Importar</span>
           </button>
           <Link
             to="/calificaciones/new"
@@ -166,77 +179,27 @@ const Calificaciones = () => {
             </div>
 
             {/* Filas de calificaciones */}
-            {filteredCalificaciones.map((calificacion, index) => {
-              const maxNota =
-                calificacion.examenSimulacro?.preguntasData?.reduce(
-                  (sum, p) => sum + p.puntaje,
-                  0
-                ) || 100;
+            {filteredCalificaciones.map(
+              (calificacion: Calificacion, index: number) => {
+                const maxNota =
+                  calificacion.examenSimulacro?.preguntasData?.reduce(
+                    (sum, p) => sum + p.puntaje,
+                    0
+                  ) || 100;
 
-              return (
-                <div
-                  key={calificacion.id}
-                  className={`p-4 xl:p-0 hover:bg-gray-50 transition-colors duration-150 ${
-                    index === filteredCalificaciones.length - 1
-                      ? "rounded-b-lg"
-                      : ""
-                  }`}
-                >
-                  {/* Vista para pantallas grandes */}
-                  <div className="hidden xl:grid xl:grid-cols-12 xl:items-center xl:px-6 xl:py-4">
-                    <div className="xl:col-span-3">
-                      <div className="text-sm font-medium text-gray-900">
-                        {calificacion.postulante?.apellidos},{" "}
-                        {calificacion.postulante?.nombres}
-                      </div>
-                      <div className="text-sm text-gray-500">
-                        DNI: {calificacion.postulante?.dni}
-                      </div>
-                    </div>
-                    <div className="xl:col-span-3">
-                      <div className="text-sm font-medium text-gray-900">
-                        {calificacion.examenSimulacro?.nombre}
-                      </div>
-                      <div className="text-sm text-gray-500">
-                        {calificacion.examenSimulacro?.proceso}
-                      </div>
-                    </div>
-                    <div className="xl:col-span-2">
-                      <span
-                        className={`px-3 py-1 text-sm font-semibold rounded-full ${getNotaColor(
-                          calificacion.calificacionFinal,
-                          maxNota
-                        )}`}
-                      >
-                        {calificacion.calificacionFinal.toFixed(2)} / {maxNota}
-                      </span>
-                    </div>
-                    <div className="xl:col-span-2 text-sm text-gray-500">
-                      {new Date(calificacion.fechaExamen).toLocaleDateString()}
-                    </div>
-                    <div className="xl:col-span-2 text-right flex justify-end space-x-2">
-                      <Link
-                        to={`/calificaciones/${calificacion.id}`}
-                        className="p-2 rounded-md text-green-600 hover:bg-green-50 transition-colors duration-200"
-                        title="Ver detalles"
-                      >
-                        <Eye size={18} />
-                      </Link>
-                      <button
-                        onClick={() => handleDeleteClick(calificacion)}
-                        className="p-2 rounded-md text-red-600 hover:bg-red-50 transition-colors duration-200"
-                        title="Eliminar calificación"
-                      >
-                        <Trash2 size={18} />
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Vista para pantallas pequeñas y medianas */}
-                  <div className="xl:hidden">
-                    <div className="flex items-center justify-between mb-2">
-                      <div>
-                        <div className="font-medium text-gray-900">
+                return (
+                  <div
+                    key={calificacion.id}
+                    className={`p-4 xl:p-0 hover:bg-gray-50 transition-colors duration-150 ${
+                      index === filteredCalificaciones.length - 1
+                        ? "rounded-b-lg"
+                        : ""
+                    }`}
+                  >
+                    {/* Vista para pantallas grandes */}
+                    <div className="hidden xl:grid xl:grid-cols-12 xl:items-center xl:px-6 xl:py-4">
+                      <div className="xl:col-span-3">
+                        <div className="text-sm font-medium text-gray-900">
                           {calificacion.postulante?.apellidos},{" "}
                           {calificacion.postulante?.nombres}
                         </div>
@@ -244,48 +207,103 @@ const Calificaciones = () => {
                           DNI: {calificacion.postulante?.dni}
                         </div>
                       </div>
-                      <div className="flex space-x-1">
+                      <div className="xl:col-span-3">
+                        <div className="text-sm font-medium text-gray-900">
+                          {calificacion.examenSimulacro?.nombre}
+                        </div>
+                        <div className="text-sm text-gray-500">
+                          {calificacion.examenSimulacro?.proceso}
+                        </div>
+                      </div>
+                      <div className="xl:col-span-2">
+                        <span
+                          className={`px-3 py-1 text-sm font-semibold rounded-full ${getNotaColor(
+                            calificacion.calificacionFinal,
+                            maxNota
+                          )}`}
+                        >
+                          {calificacion.calificacionFinal} / {maxNota}
+                        </span>
+                      </div>
+                      <div className="xl:col-span-2 text-sm text-gray-500">
+                        {new Date(
+                          calificacion.fechaExamen
+                        ).toLocaleDateString()}
+                      </div>
+                      <div className="xl:col-span-2 text-right flex justify-end space-x-2">
                         <Link
-                          to={`/calificaciones/${calificacion.id}`}
+                          to={`/calificaciones/${calificacion.id}/detalle`}
                           className="p-2 rounded-md text-green-600 hover:bg-green-50 transition-colors duration-200"
+                          title="Ver detalles"
                         >
                           <Eye size={18} />
                         </Link>
                         <button
                           onClick={() => handleDeleteClick(calificacion)}
                           className="p-2 rounded-md text-red-600 hover:bg-red-50 transition-colors duration-200"
+                          title="Eliminar calificación"
                         >
                           <Trash2 size={18} />
                         </button>
                       </div>
                     </div>
-                    <div className="mb-2">
-                      <div className="text-sm font-medium text-gray-700">
-                        {calificacion.examenSimulacro?.nombre}
+
+                    {/* Vista para pantallas pequeñas y medianas */}
+                    <div className="xl:hidden">
+                      <div className="flex items-center justify-between mb-2">
+                        <div>
+                          <div className="font-medium text-gray-900">
+                            {calificacion.postulante?.apellidos},{" "}
+                            {calificacion.postulante?.nombres}
+                          </div>
+                          <div className="text-sm text-gray-500">
+                            DNI: {calificacion.postulante?.dni}
+                          </div>
+                        </div>
+                        <div className="flex space-x-1">
+                          <Link
+                            to={`/calificaciones/${calificacion.id}/detalle`}
+                            className="p-2 rounded-md text-green-600 hover:bg-green-50 transition-colors duration-200"
+                          >
+                            <Eye size={18} />
+                          </Link>
+                          <button
+                            onClick={() => handleDeleteClick(calificacion)}
+                            className="p-2 rounded-md text-red-600 hover:bg-red-50 transition-colors duration-200"
+                          >
+                            <Trash2 size={18} />
+                          </button>
+                        </div>
                       </div>
-                      <div className="text-sm text-gray-500">
-                        {calificacion.examenSimulacro?.proceso}
+                      <div className="mb-2">
+                        <div className="text-sm font-medium text-gray-700">
+                          {calificacion.examenSimulacro?.nombre}
+                        </div>
+                        <div className="text-sm text-gray-500">
+                          {calificacion.examenSimulacro?.proceso}
+                        </div>
                       </div>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <span
-                        className={`px-3 py-1 text-sm font-semibold rounded-full ${getNotaColor(
-                          calificacion.calificacionFinal,
-                          maxNota
-                        )}`}
-                      >
-                        {calificacion.calificacionFinal.toFixed(2)} / {maxNota}
-                      </span>
-                      <div className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded-md">
-                        {new Date(
-                          calificacion.fechaExamen
-                        ).toLocaleDateString()}
+                      <div className="flex items-center justify-between">
+                        <span
+                          className={`px-3 py-1 text-sm font-semibold rounded-full ${getNotaColor(
+                            calificacion.calificacionFinal,
+                            maxNota
+                          )}`}
+                        >
+                          {calificacion.calificacionFinal.toFixed(2)} /{" "}
+                          {maxNota}
+                        </span>
+                        <div className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded-md">
+                          {new Date(
+                            calificacion.fechaExamen
+                          ).toLocaleDateString()}
+                        </div>
                       </div>
                     </div>
                   </div>
-                </div>
-              );
-            })}
+                );
+              }
+            )}
           </div>
         )}
       </div>
@@ -355,6 +373,11 @@ const Calificaciones = () => {
           </div>
         </div>
       )}
+      {/* Modal de importación de calificaciones */}
+      <ImportCalificacionesModal
+        isOpen={showImportModal}
+        onClose={() => setShowImportModal(false)}
+      />
     </div>
   );
 };
