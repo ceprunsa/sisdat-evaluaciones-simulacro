@@ -69,10 +69,10 @@ const Login = () => {
         <div className="flex flex-col items-center justify-center p-4 sm:p-6 border-b border-gray-200 bg-gradient-to-r from-[#1A2855]/5 to-[#7A1A2B]/5">
           <Logo className="h-16 sm:h-20 w-auto" showText={false} />
           <h1 className="mt-2 sm:mt-3 text-xl sm:text-2xl font-bold text-[#1A2855]">
-            Aplicación-base
+            SisDat-Examenes Simulacro
           </h1>
           <p className="text-xs sm:text-sm text-gray-600">
-            Sistema de gestión institucional
+            Sistema de Dato y Estadistica
           </p>
         </div>
 
@@ -85,10 +85,9 @@ const Login = () => {
                 Acerca de la aplicación
               </h2>
               <p className="text-xs sm:text-sm text-gray-600">
-                Esta es una aplicación base para la gestión de usuarios y
-                administración de recursos. Utiliza tu cuenta institucional para
-                acceder al sistema y gestionar la información de manera
-                eficiente.
+                Esta es una sistema de visualización y guardado de datos de
+                evaluaciones de simulacro, diseñado para facilitar la gestión y
+                análisis de resultados académicos
               </p>
             </div>
 
@@ -97,10 +96,10 @@ const Login = () => {
                 Características principales:
               </h3>
               <ul className="text-xs sm:text-sm text-gray-600 space-y-1 list-disc pl-4 sm:pl-5">
-                <li>Gestión de usuarios y permisos</li>
-                <li>Panel de administración intuitivo</li>
                 <li>Autenticación segura con Google</li>
-                <li>Interfaz responsiva para todos los dispositivos</li>
+                <li>Visualización de datos de evaluaciones</li>
+                <li>Visualización de resultados de evaluaciones</li>
+                <li>Exportación de datos en formatos comunes</li>
               </ul>
             </div>
 
