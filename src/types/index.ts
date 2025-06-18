@@ -170,6 +170,7 @@ export interface PostulantesHookReturn {
   postulanteByIdQuery: (id: string | undefined) => any;
   savePostulante: (data: Partial<Postulante>) => void;
   deletePostulante: (id: string) => void;
+  postulantesByExamenQuery: (examenId?: string) => any; // Nueva función para obtener postulantes por examen
   isSaving: boolean;
   isDeleting: boolean;
 }
@@ -209,6 +210,7 @@ export interface CalificacionesHookReturn {
   saveCalificacion: (data: Partial<Calificacion>) => void;
   deleteCalificacion: (id: string) => void;
   exportToExcel: (calificaciones: Calificacion[]) => void;
+  calificacionesByExamenQuery: (examenId?: string) => any; // Nueva función para obtener calificaciones por examen
   isSaving: boolean;
   isDeleting: boolean;
   isExporting: boolean;

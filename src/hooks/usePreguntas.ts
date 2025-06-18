@@ -57,7 +57,7 @@ export const usePreguntas = (): PreguntasHookReturn => {
     mutationFn: async (
       preguntaData: Partial<Pregunta>
     ): Promise<Partial<Pregunta>> => {
-      if (!preguntaData.curso || !preguntaData.tema || !preguntaData.subtema) {
+      if (!preguntaData.curso || !preguntaData.tema) {
         throw new Error("Curso, tema y subtema son requeridos");
       }
 
@@ -80,7 +80,6 @@ export const usePreguntas = (): PreguntasHookReturn => {
           await updateDoc(preguntaRef, {
             curso: preguntaData.curso,
             tema: preguntaData.tema,
-            subtema: preguntaData.subtema,
             area: preguntaData.area,
             puntaje: preguntaData.puntaje,
             competencia: preguntaData.competencia,
@@ -93,7 +92,7 @@ export const usePreguntas = (): PreguntasHookReturn => {
           await addDoc(collection(db, "preguntas"), {
             curso: preguntaData.curso,
             tema: preguntaData.tema,
-            subtema: preguntaData.subtema,
+
             area: preguntaData.area,
             puntaje: preguntaData.puntaje,
             competencia: preguntaData.competencia,

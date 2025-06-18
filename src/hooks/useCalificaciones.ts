@@ -9,6 +9,8 @@ import {
   deleteDoc,
   addDoc,
   updateDoc,
+  query,
+  where,
 } from "firebase/firestore";
 import { db } from "../firebase/config";
 import { useAuth } from "./useAuth";
@@ -22,6 +24,8 @@ import type {
 import { useMemo } from "react";
 import toast from "react-hot-toast";
 import Decimal from "decimal.js";
+import * as XLSX from "xlsx";
+import { saveAs } from "file-saver";
 
 export const useCalificaciones = (): CalificacionesHookReturn => {
   const queryClient = useQueryClient();
@@ -31,6 +35,83 @@ export const useCalificaciones = (): CalificacionesHookReturn => {
     queryKey: ["calificaciones"],
     queryFn: getCalificaciones,
   });
+
+  const calificacionesByExamenQuery = (examenId?: string) => {
+    return useQuery({
+      queryKey: ["calificaciones", "byExamen", examenId],
+      queryFn: async (): Promise<Calificacion[]> => {
+        if (!examenId) return [];
+
+        const calificacionesRef = collection(db, "calificaciones");
+        const calificacionesQuery = query(
+          calificacionesRef,
+          where("examenSimulacroId", "==", examenId)
+        );
+        const snapshot = await getDocs(calificacionesQuery);
+
+        const calificaciones = await Promise.all(
+          snapshot.docs.map(async (docSnap) => {
+            const data = docSnap.data();
+
+            let postulante = null;
+            if (data.postulanteId) {
+              const postulanteDoc = await getDoc(
+                doc(db, "postulantes", data.postulanteId)
+              );
+              if (postulanteDoc.exists()) {
+                postulante = { id: postulanteDoc.id, ...postulanteDoc.data() };
+              }
+            }
+
+            let examenSimulacro = null;
+            if (data.examenSimulacroId) {
+              const examenDoc = await getDoc(
+                doc(db, "examenes", data.examenSimulacroId)
+              );
+              if (examenDoc.exists()) {
+                const examenData = examenDoc.data();
+
+                let preguntasData = [];
+                if (examenData.preguntas && examenData.preguntas.length > 0) {
+                  const preguntasPromises = examenData.preguntas.map(
+                    async (preguntaId: string) => {
+                      const preguntaDoc = await getDoc(
+                        doc(db, "preguntas", preguntaId)
+                      );
+                      return preguntaDoc.exists()
+                        ? { id: preguntaDoc.id, ...preguntaDoc.data() }
+                        : null;
+                    }
+                  );
+                  preguntasData = (await Promise.all(preguntasPromises)).filter(
+                    Boolean
+                  );
+                }
+
+                examenSimulacro = {
+                  id: examenDoc.id,
+                  ...examenData,
+                  preguntasData,
+                };
+              }
+            }
+
+            return {
+              id: docSnap.id,
+              ...data,
+              postulante,
+              examenSimulacro,
+            } as Calificacion;
+          })
+        );
+
+        return calificaciones.sort(
+          (a, b) => b.calificacionFinal - a.calificacionFinal
+        );
+      },
+      enabled: !!examenId,
+    });
+  };
 
   const calificacionByIdQuery = (id?: string) => {
     return useQuery({
@@ -52,7 +133,6 @@ export const useCalificaciones = (): CalificacionesHookReturn => {
     }
 
     try {
-      // Obtener preguntas del examen para calcular calificación
       const examenDoc = await getDoc(
         doc(db, "examenes", calificacionData.examenSimulacroId)
       );
@@ -71,7 +151,6 @@ export const useCalificaciones = (): CalificacionesHookReturn => {
       );
       const preguntas = (await Promise.all(preguntasPromises)).filter(Boolean);
 
-      // ✅ Calcular calificación final con Decimal.js para precisión exacta
       let calificacionFinalDecimal = new Decimal(0);
       let preguntasAcertadas = 0;
 
@@ -82,7 +161,6 @@ export const useCalificaciones = (): CalificacionesHookReturn => {
 
           if (esCorrecta) {
             preguntasAcertadas++;
-            // ✅ Suma precisa con Decimal
             const puntajePregunta = new Decimal(pregunta.puntaje || 0);
             calificacionFinalDecimal =
               calificacionFinalDecimal.plus(puntajePregunta);
@@ -90,10 +168,8 @@ export const useCalificaciones = (): CalificacionesHookReturn => {
         }
       });
 
-      // ✅ Convertir a number para almacenar en Firebase
       const calificacionFinal = calificacionFinalDecimal.toNumber();
 
-      // Calcular matriz por curso y retroalimentación con Decimal
       const { matrizPorCurso, retroalimentacion } =
         calcularMatrizYRetroalimentacion(
           calificacionData.respuestas as Alternativa[],
@@ -104,8 +180,8 @@ export const useCalificaciones = (): CalificacionesHookReturn => {
         postulanteId: calificacionData.postulanteId,
         examenSimulacroId: calificacionData.examenSimulacroId,
         respuestas: calificacionData.respuestas,
-        preguntasAcertadas, // ✅ Cantidad de preguntas correctas
-        calificacionFinal, // ✅ Puntaje calculado con precisión decimal
+        preguntasAcertadas,
+        calificacionFinal,
         matrizPorCurso,
         retroalimentacion,
         fechaExamen: calificacionData.fechaExamen || new Date().toISOString(),
@@ -113,7 +189,6 @@ export const useCalificaciones = (): CalificacionesHookReturn => {
         createdBy: user?.email || "system",
       };
 
-      // ✅ Log de precisión para debugging
       console.log(`Calificación calculada con precisión:`);
       console.log(`- Preguntas acertadas: ${preguntasAcertadas}`);
       console.log(
@@ -122,12 +197,10 @@ export const useCalificaciones = (): CalificacionesHookReturn => {
       console.log(`- Puntaje final (almacenado): ${calificacionFinal}`);
 
       if (calificacionData.id) {
-        // Actualizar calificación existente
         const calificacionRef = doc(db, "calificaciones", calificacionData.id);
         await updateDoc(calificacionRef, calificacionCompleta);
         toast.success("Calificación actualizada exitosamente");
       } else {
-        // Crear nueva calificación
         await addDoc(collection(db, "calificaciones"), calificacionCompleta);
         toast.success("Calificación creada exitosamente");
       }
@@ -162,33 +235,231 @@ export const useCalificaciones = (): CalificacionesHookReturn => {
     calificaciones: Calificacion[]
   ): Promise<void> => {
     try {
-      // Aquí iría la lógica real de exportación a Excel
-      // Por ahora, simularemos la exportación
-      await new Promise((resolve) => setTimeout(resolve, 2000));
+      if (calificaciones.length === 0) {
+        toast.error("No hay calificaciones para exportar");
+        return;
+      }
 
-      // Crear datos para exportar
-      const dataToExport = calificaciones.map((cal) => ({
-        DNI: cal.postulante?.dni,
-        Apellidos: cal.postulante?.apellidos,
-        Nombres: cal.postulante?.nombres,
-        Carrera: cal.postulante?.carreraPostulacion,
-        Especialidad: cal.postulante?.especialidad || "",
-        Correo: cal.postulante?.correoCeprunsa,
-        Examen: cal.examenSimulacro?.nombre,
-        Proceso: cal.examenSimulacro?.proceso,
-        Área: cal.examenSimulacro?.area,
-        "Preguntas Acertadas": cal.preguntasAcertadas, // ✅ Nuevo campo
-        "Preguntas Incorrectas": 80 - cal.preguntasAcertadas, // ✅ Calculado
-        "Porcentaje Aciertos": `${((cal.preguntasAcertadas / 80) * 100).toFixed(
-          1
-        )}%`, // ✅ Porcentaje
-        "Calificación Final": cal.calificacionFinal,
-        "Fecha Examen": new Date(cal.fechaExamen).toLocaleDateString(),
-      }));
+      // Obtener todos los cursos únicos de todas las calificaciones
+      const todosLosCursos = new Set<string>();
+      calificaciones.forEach((cal) => {
+        cal.matrizPorCurso?.forEach((matriz) => {
+          todosLosCursos.add(matriz.curso);
+        });
+      });
+      const cursosOrdenados = Array.from(todosLosCursos).sort();
 
-      console.log("Datos para exportar:", dataToExport);
+      // Preparar datos para la hoja principal
+      const datosGenerales = calificaciones.map((cal, index) => {
+        const fila: any = {
+          "N°": index + 1,
+          DNI: cal.postulante?.dni || "",
+          Apellidos: cal.postulante?.apellidos || "",
+          Nombres: cal.postulante?.nombres || "",
+          "Carrera Postulación": cal.postulante?.carreraPostulacion || "",
+          Especialidad: cal.postulante?.especialidad || "",
+          "Correo CEPRUNSA": cal.postulante?.correoCeprunsa || "",
+          Examen: cal.examenSimulacro?.nombre || "",
+          Proceso: cal.examenSimulacro?.proceso || "",
+          Área: cal.examenSimulacro?.area || "",
+          "Preguntas Acertadas": cal.preguntasAcertadas || 0,
+          "Preguntas Incorrectas": 80 - (cal.preguntasAcertadas || 0),
+          "Porcentaje Aciertos": `${(
+            ((cal.preguntasAcertadas || 0) / 80) *
+            100
+          ).toFixed(1)}%`,
+          "Calificación Final": cal.calificacionFinal || 0,
+          "Fecha Examen": cal.fechaExamen
+            ? new Date(cal.fechaExamen).toLocaleDateString()
+            : "",
+        };
+
+        // Agregar matriz por curso
+        cursosOrdenados.forEach((curso) => {
+          const matrizCurso = cal.matrizPorCurso?.find(
+            (m) => m.curso === curso
+          );
+          fila[`${curso} - Correctas`] = matrizCurso?.correctas || 0;
+          fila[`${curso} - Incorrectas`] = matrizCurso?.incorrectas || 0;
+          fila[`${curso} - Total`] = matrizCurso?.total || 0;
+          fila[`${curso} - Puntaje Obtenido`] =
+            matrizCurso?.puntajeObtenido || 0;
+          fila[`${curso} - Puntaje Máximo`] = matrizCurso?.puntajeMaximo || 0;
+          fila[`${curso} - Porcentaje`] = matrizCurso?.total
+            ? `${((matrizCurso.correctas / matrizCurso.total) * 100).toFixed(
+                1
+              )}%`
+            : "0%";
+        });
+
+        return fila;
+      });
+
+      // Preparar datos para la hoja de retroalimentación
+      const datosRetroalimentacion: any[] = [];
+      calificaciones.forEach((cal, calIndex) => {
+        cal.retroalimentacion?.forEach((retro) => {
+          // Competencias cumplidas
+          retro.competenciasCumplidas.forEach((competencia) => {
+            datosRetroalimentacion.push({
+              "N° Postulante": calIndex + 1,
+              DNI: cal.postulante?.dni || "",
+              Apellidos: cal.postulante?.apellidos || "",
+              Nombres: cal.postulante?.nombres || "",
+              Curso: retro.curso,
+              Tipo: "Competencia Cumplida",
+              Mensaje: competencia,
+            });
+          });
+
+          // Competencias no cumplidas
+          retro.competenciasNoCumplidas.forEach((competencia) => {
+            datosRetroalimentacion.push({
+              "N° Postulante": calIndex + 1,
+              DNI: cal.postulante?.dni || "",
+              Apellidos: cal.postulante?.apellidos || "",
+              Nombres: cal.postulante?.nombres || "",
+              Curso: retro.curso,
+              Tipo: "Competencia No Cumplida",
+              Mensaje: competencia,
+            });
+          });
+        });
+      });
+
+      // Crear el libro de Excel
+      const workbook = XLSX.utils.book_new();
+
+      // Hoja 1: Datos generales y matriz por curso
+      const worksheetGeneral = XLSX.utils.json_to_sheet(datosGenerales);
+
+      // Ajustar ancho de columnas
+      const colWidths = [
+        { wch: 5 }, // N°
+        { wch: 12 }, // DNI
+        { wch: 25 }, // Apellidos
+        { wch: 25 }, // Nombres
+        { wch: 30 }, // Carrera
+        { wch: 20 }, // Especialidad
+        { wch: 35 }, // Correo
+        { wch: 30 }, // Examen
+        { wch: 20 }, // Proceso
+        { wch: 12 }, // Área
+        { wch: 15 }, // Preguntas Acertadas
+        { wch: 15 }, // Preguntas Incorrectas
+        { wch: 15 }, // Porcentaje Aciertos
+        { wch: 15 }, // Calificación Final
+        { wch: 12 }, // Fecha Examen
+      ];
+
+      // Agregar anchos para columnas de cursos
+      cursosOrdenados.forEach(() => {
+        colWidths.push(
+          { wch: 12 }, // Correctas
+          { wch: 12 }, // Incorrectas
+          { wch: 10 }, // Total
+          { wch: 15 }, // Puntaje Obtenido
+          { wch: 15 }, // Puntaje Máximo
+          { wch: 12 } // Porcentaje
+        );
+      });
+
+      worksheetGeneral["!cols"] = colWidths;
+      XLSX.utils.book_append_sheet(
+        workbook,
+        worksheetGeneral,
+        "Calificaciones y Matriz"
+      );
+
+      // Hoja 2: Retroalimentación
+      if (datosRetroalimentacion.length > 0) {
+        const worksheetRetro = XLSX.utils.json_to_sheet(datosRetroalimentacion);
+        worksheetRetro["!cols"] = [
+          { wch: 12 }, // N° Postulante
+          { wch: 12 }, // DNI
+          { wch: 25 }, // Apellidos
+          { wch: 25 }, // Nombres
+          { wch: 20 }, // Curso
+          { wch: 25 }, // Tipo
+          { wch: 60 }, // Mensaje
+        ];
+        XLSX.utils.book_append_sheet(
+          workbook,
+          worksheetRetro,
+          "Retroalimentación"
+        );
+      }
+
+      // Hoja 3: Resumen estadístico
+      const resumenEstadistico = cursosOrdenados.map((curso) => {
+        const datosDelCurso = calificaciones
+          .map((cal) => cal.matrizPorCurso?.find((m) => m.curso === curso))
+          .filter(Boolean);
+
+        const totalPostulantes = datosDelCurso.length;
+        const promedioCorrectas =
+          totalPostulantes > 0
+            ? datosDelCurso.reduce((sum, m) => sum + (m?.correctas || 0), 0) /
+              totalPostulantes
+            : 0;
+        const promedioPorcentaje =
+          totalPostulantes > 0
+            ? datosDelCurso.reduce(
+                (sum, m) => sum + ((m?.correctas || 0) / (m?.total || 1)) * 100,
+                0
+              ) / totalPostulantes
+            : 0;
+
+        return {
+          Curso: curso,
+          "Total Postulantes": totalPostulantes,
+          "Promedio Correctas": promedioCorrectas.toFixed(2),
+          "Promedio Porcentaje": `${promedioPorcentaje.toFixed(1)}%`,
+          "Mejor Puntaje": Math.max(
+            ...datosDelCurso.map((m) => m?.correctas || 0)
+          ),
+          "Peor Puntaje": Math.min(
+            ...datosDelCurso.map((m) => m?.correctas || 0)
+          ),
+        };
+      });
+
+      const worksheetResumen = XLSX.utils.json_to_sheet(resumenEstadistico);
+      worksheetResumen["!cols"] = [
+        { wch: 25 }, // Curso
+        { wch: 15 }, // Total Postulantes
+        { wch: 15 }, // Promedio Correctas
+        { wch: 18 }, // Promedio Porcentaje
+        { wch: 12 }, // Mejor Puntaje
+        { wch: 12 }, // Peor Puntaje
+      ];
+      XLSX.utils.book_append_sheet(
+        workbook,
+        worksheetResumen,
+        "Resumen por Curso"
+      );
+
+      // Generar el archivo
+      const excelBuffer = XLSX.write(workbook, {
+        bookType: "xlsx",
+        type: "array",
+      });
+      const blob = new Blob([excelBuffer], {
+        type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      });
+
+      // Generar nombre del archivo
+      const examenNombre =
+        calificaciones[0]?.examenSimulacro?.nombre || "Examen";
+      const proceso = calificaciones[0]?.examenSimulacro?.proceso || "Proceso";
+      const fecha = new Date().toISOString().split("T")[0];
+      const nombreArchivo = `Calificaciones_${examenNombre}_${proceso}_${fecha}.xlsx`;
+
+      // Descargar el archivo
+      saveAs(blob, nombreArchivo);
+
       toast.success(
-        `${calificaciones.length} calificaciones exportadas exitosamente`
+        `Excel exportado exitosamente: ${calificaciones.length} calificaciones`
       );
     } catch (error) {
       console.error("Error al exportar a Excel:", error);
@@ -228,6 +499,7 @@ export const useCalificaciones = (): CalificacionesHookReturn => {
     isError: calificacionesQuery.isError,
     error: calificacionesQuery.error,
     calificacionByIdQuery,
+    calificacionesByExamenQuery,
     saveCalificacion: saveMutation.mutate,
     deleteCalificacion: deleteMutation.mutate,
     exportToExcel: exportMutation.mutate,
@@ -237,7 +509,6 @@ export const useCalificaciones = (): CalificacionesHookReturn => {
   };
 };
 
-// Obtener todas las calificaciones con datos poblados
 const getCalificaciones = async (): Promise<Calificacion[]> => {
   const calificacionesRef = collection(db, "calificaciones");
   const snapshot = await getDocs(calificacionesRef);
@@ -246,7 +517,6 @@ const getCalificaciones = async (): Promise<Calificacion[]> => {
     snapshot.docs.map(async (docSnap) => {
       const data = docSnap.data();
 
-      // Obtener datos del postulante
       let postulante = null;
       if (data.postulanteId) {
         const postulanteDoc = await getDoc(
@@ -257,7 +527,6 @@ const getCalificaciones = async (): Promise<Calificacion[]> => {
         }
       }
 
-      // Obtener datos del examen
       let examenSimulacro = null;
       if (data.examenSimulacroId) {
         const examenDoc = await getDoc(
@@ -266,7 +535,6 @@ const getCalificaciones = async (): Promise<Calificacion[]> => {
         if (examenDoc.exists()) {
           const examenData = examenDoc.data();
 
-          // Obtener preguntas del examen
           let preguntasData = [];
           if (examenData.preguntas && examenData.preguntas.length > 0) {
             const preguntasPromises = examenData.preguntas.map(
@@ -301,10 +569,11 @@ const getCalificaciones = async (): Promise<Calificacion[]> => {
     })
   );
 
-  return calificaciones;
+  return calificaciones.sort(
+    (a, b) => b.calificacionFinal - a.calificacionFinal
+  );
 };
 
-// Obtener una calificación por ID
 const getCalificacionById = async (
   id?: string
 ): Promise<Calificacion | null> => {
@@ -314,7 +583,6 @@ const getCalificacionById = async (
   if (docSnap.exists()) {
     const data = docSnap.data();
 
-    // Obtener datos poblados igual que en getCalificaciones
     let postulante = null;
     if (data.postulanteId) {
       const postulanteDoc = await getDoc(
@@ -375,7 +643,6 @@ const calcularMatrizYRetroalimentacion = (
   const matrizPorCurso: MatrizCurso[] = [];
   const retroalimentacion: RetroalimentacionCurso[] = [];
 
-  // Agrupar por curso
   const cursos = [...new Set(preguntas.map((p) => p.curso))];
 
   cursos.forEach((curso) => {
@@ -398,7 +665,6 @@ const calcularMatrizYRetroalimentacion = (
 
       if (esCorrecta) {
         correctas++;
-
         puntajeObtenidoDecimal = puntajeObtenidoDecimal.plus(puntajePregunta);
 
         if (
@@ -416,6 +682,14 @@ const calcularMatrizYRetroalimentacion = (
         }
       }
     });
+
+    console.log(`Curso ${curso}:`);
+    console.log(
+      `- Puntaje obtenido (Decimal): ${puntajeObtenidoDecimal.toString()}`
+    );
+    console.log(
+      `- Puntaje máximo (Decimal): ${puntajeMaximoDecimal.toString()}`
+    );
 
     matrizPorCurso.push({
       curso,
@@ -435,3 +709,5 @@ const calcularMatrizYRetroalimentacion = (
 
   return { matrizPorCurso, retroalimentacion };
 };
+
+export default useCalificaciones;

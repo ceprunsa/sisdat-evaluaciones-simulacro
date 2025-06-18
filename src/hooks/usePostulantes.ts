@@ -9,6 +9,8 @@ import {
   deleteDoc,
   addDoc,
   updateDoc,
+  query,
+  where,
 } from "firebase/firestore";
 import { db } from "../firebase/config";
 import { useAuth } from "./useAuth";
@@ -20,7 +22,30 @@ export const usePostulantes = (): PostulantesHookReturn => {
   const queryClient = useQueryClient();
   const { user } = useAuth();
 
-  // Hook para obtener postulante por ID
+  const postulantesQuery = useQuery({
+    queryKey: ["postulantes"],
+    queryFn: async (): Promise<Postulante[]> => {
+      const postulantesRef = collection(db, "postulantes");
+      const snapshot = await getDocs(postulantesRef);
+      const postulantes = snapshot.docs.map(
+        (doc) =>
+          ({
+            id: doc.id,
+            ...doc.data(),
+          } as Postulante)
+      );
+
+      // ✅ Ordenar por apellidos y nombres de forma ascendente
+      return postulantes.sort((a, b) => {
+        const apellidosComparison = a.apellidos.localeCompare(b.apellidos);
+        if (apellidosComparison !== 0) {
+          return apellidosComparison;
+        }
+        return a.nombres.localeCompare(b.nombres);
+      });
+    },
+  });
+
   const postulanteByIdQuery = (id?: string) => {
     return useQuery({
       queryKey: ["postulantes", id],
@@ -28,22 +53,6 @@ export const usePostulantes = (): PostulantesHookReturn => {
       enabled: !!id,
     });
   };
-
-  // Obtener todos los postulantes
-  const postulantesQuery = useQuery({
-    queryKey: ["postulantes"],
-    queryFn: async (): Promise<Postulante[]> => {
-      const postulantesRef = collection(db, "postulantes");
-      const snapshot = await getDocs(postulantesRef);
-      return snapshot.docs.map(
-        (doc) =>
-          ({
-            id: doc.id,
-            ...doc.data(),
-          } as Postulante)
-      );
-    },
-  });
 
   const getPostulanteById = async (id?: string): Promise<Postulante | null> => {
     if (!id) return null;
@@ -135,12 +144,64 @@ export const usePostulantes = (): PostulantesHookReturn => {
 
   const memoizedPostulanteByIdQuery = useMemo(() => postulanteByIdQuery, []);
 
+  // ✅ Nueva función para obtener postulantes por examen específico
+  const postulantesByExamenQuery = (examenId?: string) => {
+    return useQuery({
+      queryKey: ["postulantes", "byExamen", examenId],
+      queryFn: async (): Promise<Postulante[]> => {
+        if (!examenId) return [];
+
+        // Primero obtener las calificaciones del examen
+        const calificacionesRef = collection(db, "calificaciones");
+        const calificacionesQuery = query(
+          calificacionesRef,
+          where("examenSimulacroId", "==", examenId)
+        );
+        const calificacionesSnapshot = await getDocs(calificacionesQuery);
+
+        // Obtener IDs únicos de postulantes
+        const postulanteIds = [
+          ...new Set(
+            calificacionesSnapshot.docs.map((doc) => doc.data().postulanteId)
+          ),
+        ];
+
+        if (postulanteIds.length === 0) return [];
+
+        // Obtener datos de postulantes
+        const postulantesPromises = postulanteIds.map(async (postulanteId) => {
+          const postulanteDoc = await getDoc(
+            doc(db, "postulantes", postulanteId)
+          );
+          return postulanteDoc.exists()
+            ? ({ id: postulanteDoc.id, ...postulanteDoc.data() } as Postulante)
+            : null;
+        });
+
+        const postulantes = (await Promise.all(postulantesPromises)).filter(
+          Boolean
+        ) as Postulante[];
+
+        // Ordenar por apellidos y nombres
+        return postulantes.sort((a, b) => {
+          const apellidosComparison = a.apellidos.localeCompare(b.apellidos);
+          if (apellidosComparison !== 0) {
+            return apellidosComparison;
+          }
+          return a.nombres.localeCompare(b.nombres);
+        });
+      },
+      enabled: !!examenId,
+    });
+  };
+
   return {
     postulantes: postulantesQuery.data || [],
     isLoading: postulantesQuery.isLoading,
     isError: postulantesQuery.isError,
     error: postulantesQuery.error as Error | null,
     postulanteByIdQuery: memoizedPostulanteByIdQuery,
+    postulantesByExamenQuery, // ✅ Nueva función exportada
     savePostulante: savePostulanteMutation.mutate,
     deletePostulante: deletePostulanteMutation.mutate,
     isSaving: savePostulanteMutation.isPending,

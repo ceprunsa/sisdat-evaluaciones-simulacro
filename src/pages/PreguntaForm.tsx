@@ -287,13 +287,17 @@ const PreguntaForm = () => {
                     >
                       Puntaje *
                     </label>
+                    {/* Puntaje pueder ser un número de hasta 10 decimales */}
                     <input
                       type="number"
                       name="puntaje"
                       id="puntaje"
-                      min="0.1"
+                      step="0.0000000001"
+                      min="0.01"
                       max="100"
-                      step="0.1"
+                      placeholder="1.0"
+                      inputMode="decimal"
+                      pattern="^\d+(\.\d{1,10})?$"
                       value={formData.puntaje || 1.0}
                       onChange={handleChange}
                       className={`mt-1 focus:ring-blue-500 focus:border-blue-500 block w-full shadow-sm sm:text-sm border-gray-300 rounded-md ${

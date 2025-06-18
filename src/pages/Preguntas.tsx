@@ -1,8 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { usePreguntas } from "../hooks/usePreguntas";
+import { useExamenes } from "../hooks/useExamenes";
+import { usePagination } from "../hooks/usePagination";
+import Pagination from "../components/Pagination";
 import ImportPreguntasModal from "../components/ImportPreguntasModal";
 import type { Pregunta } from "../types";
 import {
@@ -15,11 +18,13 @@ import {
   Calculator,
   Upload,
   Brain,
+  AlertCircle,
+  Eye,
 } from "lucide-react";
 
 const Preguntas = () => {
-  const { preguntas, isLoading, isError, deletePregunta, isDeleting } =
-    usePreguntas();
+  const { preguntas, isError, deletePregunta, isDeleting } = usePreguntas();
+  const { examenes, isLoading: loadingExamenes } = useExamenes();
   const [preguntaToDelete, setPreguntaToDelete] = useState<Pregunta | null>(
     null
   );
@@ -29,15 +34,30 @@ const Preguntas = () => {
   const [filterNivelCognitivo, setFilterNivelCognitivo] =
     useState<string>("todos");
   const [showImportModal, setShowImportModal] = useState(false);
+  const [selectedExamen, setSelectedExamen] = useState<string>("");
+  const [consultedExamen, setConsultedExamen] = useState<string>("");
+  const [isConsulting, setIsConsulting] = useState(false);
 
-  // Obtener valores únicos para los filtros
-  const cursosUnicos = [...new Set(preguntas.map((p) => p.curso))].sort();
+  const isLoading = loadingExamenes;
+
+  // ✅ Solo filtrar si se ha consultado un examen
+  const preguntasDelExamen = consultedExamen
+    ? preguntas.filter((pregunta) => {
+        const examen = examenes.find((ex) => ex.id === consultedExamen);
+        return examen?.preguntas.includes(pregunta.id);
+      })
+    : [];
+
+  // Obtener valores únicos para los filtros (solo del examen consultado)
+  const cursosUnicos = [
+    ...new Set(preguntasDelExamen.map((p) => p.curso)),
+  ].sort();
   const nivelesCognitivosUnicos = [
-    ...new Set(preguntas.map((p) => p.nivelCognitivo)),
+    ...new Set(preguntasDelExamen.map((p) => p.nivelCognitivo)),
   ].sort();
 
   // Filtrar preguntas
-  const preguntasFiltradas = preguntas.filter((pregunta) => {
+  const preguntasFiltradas = preguntasDelExamen.filter((pregunta) => {
     const matchesSearch =
       pregunta.curso.toLowerCase().includes(searchTerm.toLowerCase()) ||
       pregunta.tema.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -56,7 +76,73 @@ const Preguntas = () => {
     );
   });
 
-  // Calcular estadísticas
+  // ✅ Ordenar preguntas por curso y tema (orden alfabético ascendente)
+  const preguntasOrdenadas = preguntasFiltradas.sort((a, b) => {
+    const cursoComparison = a.curso.localeCompare(b.curso);
+    if (cursoComparison !== 0) {
+      return cursoComparison;
+    }
+    return a.tema.localeCompare(b.tema);
+  });
+
+  // ✅ Paginación de preguntas filtradas y ordenadas
+  const {
+    currentPage,
+    totalPages,
+    paginatedData: paginatedPreguntas,
+    goToPage,
+    goToNextPage,
+    goToPreviousPage,
+    goToFirstPage,
+    goToLastPage,
+    hasNextPage,
+    hasPreviousPage,
+    startIndex,
+    endIndex,
+    totalItems,
+  } = usePagination({
+    data: preguntasOrdenadas,
+    itemsPerPage: 30,
+  });
+
+  // ✅ Reset página cuando cambian los filtros
+  useEffect(() => {
+    goToPage(1);
+  }, [
+    consultedExamen,
+    searchTerm,
+    filterArea,
+    filterCurso,
+    filterNivelCognitivo,
+  ]);
+
+  // ✅ Reset filtros cuando se consulta un nuevo examen
+  useEffect(() => {
+    if (consultedExamen) {
+      setFilterArea("todas");
+      setFilterCurso("todos");
+      setFilterNivelCognitivo("todos");
+      setSearchTerm("");
+    }
+  }, [consultedExamen]);
+
+  // ✅ Función para consultar datos del examen
+  const handleConsultarExamen = async () => {
+    if (!selectedExamen) return;
+
+    setIsConsulting(true);
+    try {
+      // Simular un pequeño delay para mostrar el estado de carga
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      setConsultedExamen(selectedExamen);
+    } catch (error) {
+      console.error("Error al consultar examen:", error);
+    } finally {
+      setIsConsulting(false);
+    }
+  };
+
+  // Calcular estadísticas basadas en preguntas filtradas (no paginadas)
   const totalPuntaje = preguntasFiltradas.reduce(
     (sum, p) => sum + p.puntaje,
     0
@@ -133,6 +219,11 @@ const Preguntas = () => {
     return "bg-indigo-100 text-indigo-800";
   };
 
+  // ✅ Obtener datos del examen consultado
+  const examenConsultado = consultedExamen
+    ? examenes.find((ex) => ex.id === consultedExamen)
+    : null;
+
   return (
     <div className="w-full max-w-full mx-auto">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
@@ -140,6 +231,32 @@ const Preguntas = () => {
           Banco de Preguntas
         </h1>
         <div className="flex flex-col sm:flex-row gap-2">
+          {/* ✅ Selector de examen con botón consultar */}
+          <div className="flex gap-2">
+            <select
+              value={selectedExamen}
+              onChange={(e) => setSelectedExamen(e.target.value)}
+              className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 min-w-48"
+            >
+              <option value="">Seleccionar examen</option>
+              {examenes.map((examen) => (
+                <option key={examen.id} value={examen.id}>
+                  {examen.nombre} - {examen.area}-{examen.proceso}
+                </option>
+              ))}
+            </select>
+            <button
+              onClick={handleConsultarExamen}
+              disabled={!selectedExamen || isConsulting}
+              className="btn btn-secondary inline-flex items-center"
+            >
+              <Eye size={18} className="mr-1 md:mr-2" />
+              <span className="hidden sm:inline">
+                {isConsulting ? "Consultando..." : "Consultar"}
+              </span>
+              <span className="sm:hidden">{isConsulting ? "..." : "Ver"}</span>
+            </button>
+          </div>
           <button
             onClick={() => setShowImportModal(true)}
             className="btn btn-secondary inline-flex items-center"
@@ -159,344 +276,421 @@ const Preguntas = () => {
         </div>
       </div>
 
-      {/* Filtros */}
-      <div className="mb-6 space-y-4">
-        {/* Barra de búsqueda */}
-        <div className="relative">
-          <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-            <Search className="h-5 w-5 text-gray-400" />
-          </div>
-          <input
-            type="text"
-            placeholder="Buscar por curso, tema, competencia o nivel cognitivo..."
-            className="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md leading-5 bg-white placeholder-gray-500 focus:outline-none focus:placeholder-gray-400 focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-          />
-        </div>
-
-        {/* Filtros por área, curso y nivel cognitivo */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          <select
-            value={filterArea}
-            onChange={(e) => setFilterArea(e.target.value)}
-            className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
-          >
-            <option value="todas">Todas las áreas</option>
-            <option value="Biomédicas">Biomédicas</option>
-            <option value="Ingenierías">Ingenierías</option>
-            <option value="Sociales">Sociales</option>
-          </select>
-
-          <select
-            value={filterCurso}
-            onChange={(e) => setFilterCurso(e.target.value)}
-            className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
-          >
-            <option value="todos">Todos los cursos</option>
-            {cursosUnicos.map((curso) => (
-              <option key={curso} value={curso}>
-                {curso}
-              </option>
-            ))}
-          </select>
-
-          <select
-            value={filterNivelCognitivo}
-            onChange={(e) => setFilterNivelCognitivo(e.target.value)}
-            className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
-          >
-            <option value="todos">Todos los niveles</option>
-            {nivelesCognitivosUnicos.map((nivel) => (
-              <option key={nivel} value={nivel}>
-                {nivel}
-              </option>
-            ))}
-          </select>
-        </div>
-      </div>
-
-      {/* Estadísticas rápidas */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-        <div className="bg-white p-4 rounded-lg shadow border border-gray-100">
-          <div className="flex items-center">
-            <BookOpen className="h-8 w-8 text-blue-600" />
-            <div className="ml-3">
-              <p className="text-sm font-medium text-gray-500">
-                Total Preguntas
-              </p>
-              <p className="text-xl font-semibold text-gray-900">
-                {preguntasFiltradas.length}
+      {/* ✅ Mostrar información del examen consultado */}
+      {consultedExamen && examenConsultado && (
+        <div className="bg-white p-4 rounded-lg shadow border border-gray-100 mb-6">
+          <h2 className="text-lg font-semibold text-gray-900 mb-2">
+            Examen Consultado
+          </h2>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div>
+              <p className="text-sm font-medium text-gray-500">Nombre</p>
+              <p className="text-base font-semibold text-gray-900">
+                {examenConsultado.nombre}
               </p>
             </div>
-          </div>
-        </div>
-        <div className="bg-white p-4 rounded-lg shadow border border-gray-100">
-          <div className="flex items-center">
-            <Target className="h-8 w-8 text-green-600" />
-            <div className="ml-3">
-              <p className="text-sm font-medium text-gray-500">Cursos</p>
-              <p className="text-xl font-semibold text-gray-900">
-                {filterCurso === "todos" ? cursosUnicos.length : 1}
+            <div>
+              <p className="text-sm font-medium text-gray-500">Proceso</p>
+              <p className="text-base font-semibold text-gray-900">
+                {examenConsultado.proceso}
               </p>
             </div>
-          </div>
-        </div>
-        <div className="bg-white p-4 rounded-lg shadow border border-gray-100">
-          <div className="flex items-center">
-            <Calculator className="h-8 w-8 text-yellow-600" />
-            <div className="ml-3">
-              <p className="text-sm font-medium text-gray-500">Puntaje Total</p>
-              <p
-                className={`text-xl font-semibold ${
-                  totalPuntaje === 100
-                    ? "text-green-600"
-                    : totalPuntaje > 100
-                    ? "text-red-600"
-                    : "text-gray-900"
-                }`}
-              >
-                {totalPuntaje.toFixed(1)} / 100
-              </p>
+            <div>
+              <p className="text-sm font-medium text-gray-500">Área</p>
+              <span className="px-3 py-1 text-sm font-semibold rounded-full bg-blue-100 text-blue-800">
+                {examenConsultado.area}
+              </span>
             </div>
-          </div>
-        </div>
-        <div className="bg-white p-4 rounded-lg shadow border border-gray-100">
-          <div className="flex items-center">
-            <Brain className="h-8 w-8 text-purple-600" />
-            <div className="ml-3">
-              <p className="text-sm font-medium text-gray-500">
-                Niveles Cognitivos
-              </p>
-              <p className="text-xl font-semibold text-gray-900">
-                {filterNivelCognitivo === "todos"
-                  ? nivelesCognitivosUnicos.length
-                  : 1}
-              </p>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Distribución por nivel cognitivo */}
-      {estadisticasNivelCognitivo.length > 0 && (
-        <div className="mb-6 bg-white p-4 rounded-lg shadow border border-gray-100">
-          <h3 className="text-sm font-medium text-gray-900 mb-3 flex items-center">
-            <Brain className="h-4 w-4 mr-2" />
-            Distribución por Nivel Cognitivo
-          </h3>
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2">
-            {estadisticasNivelCognitivo.map(({ nivel, cantidad }) => (
-              <div key={nivel} className="text-center">
-                <div
-                  className={`px-2 py-1 rounded-full text-xs font-medium ${getNivelCognitivoColor(
-                    nivel
-                  )}`}
-                >
-                  {nivel}
-                </div>
-                <div className="text-sm font-semibold text-gray-900 mt-1">
-                  {cantidad}
-                </div>
-              </div>
-            ))}
           </div>
         </div>
       )}
 
-      {/* Alerta de control de puntajes */}
-      {totalPuntaje !== 100 && (
-        <div
-          className={`mb-6 p-4 rounded-lg border ${
-            totalPuntaje > 100
-              ? "bg-red-50 border-red-200 text-red-700"
-              : "bg-yellow-50 border-yellow-200 text-yellow-700"
-          }`}
-        >
+      {/* ✅ Mostrar mensaje si no se ha consultado ningún examen */}
+      {!consultedExamen && (
+        <div className="bg-blue-50 border border-blue-200 text-blue-700 px-4 py-3 rounded-lg mb-6">
           <div className="flex items-center">
-            <Calculator className="h-5 w-5 mr-2" />
+            <AlertCircle className="h-5 w-5 mr-2" />
             <span className="font-medium">
-              {totalPuntaje > 100
-                ? `⚠️ El puntaje total excede 100 puntos (${totalPuntaje.toFixed(
-                    1
-                  )})`
-                : `📝 Faltan ${(100 - totalPuntaje).toFixed(
-                    1
-                  )} puntos para completar 100`}
+              Selecciona un examen y presiona "Consultar" para ver las preguntas
+              correspondientes.
             </span>
           </div>
         </div>
       )}
 
-      {/* Lista de preguntas */}
-      <div className="bg-white shadow rounded-lg overflow-hidden border border-gray-100">
-        {preguntasFiltradas.length === 0 ? (
-          <div className="p-4 text-center text-gray-500">
-            {searchTerm ||
-            filterArea !== "todas" ||
-            filterCurso !== "todos" ||
-            filterNivelCognitivo !== "todos"
-              ? "No se encontraron preguntas que coincidan con los filtros"
-              : "No hay preguntas registradas"}
-          </div>
-        ) : (
-          <div className="divide-y divide-gray-200">
-            {/* Encabezado de la tabla (solo visible en pantallas grandes) */}
-            <div className="hidden xl:grid xl:grid-cols-12 bg-gray-50 px-6 py-3 rounded-t-lg">
-              <div className="xl:col-span-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Curso
+      {/* ✅ Mostrar contenido solo si se ha consultado un examen */}
+      {consultedExamen && (
+        <>
+          {/* Filtros */}
+          <div className="mb-6 space-y-4">
+            {/* Barra de búsqueda */}
+            <div className="relative">
+              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                <Search className="h-5 w-5 text-gray-400" />
               </div>
-              <div className="xl:col-span-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Tema
-              </div>
-              <div className="xl:col-span-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Competencia
-              </div>
-              <div className="xl:col-span-1 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Área
-              </div>
-              <div className="xl:col-span-1 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Nivel Cognitivo
-              </div>
-              <div className="xl:col-span-1 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Puntaje
-              </div>
-              <div className="xl:col-span-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Acciones
-              </div>
+              <input
+                type="text"
+                placeholder="Buscar por curso, tema, competencia o nivel cognitivo..."
+                className="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md leading-5 bg-white placeholder-gray-500 focus:outline-none focus:placeholder-gray-400 focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+              />
             </div>
 
-            {/* Filas de preguntas */}
-            {preguntasFiltradas.map((pregunta, index) => (
-              <div
-                key={pregunta.id}
-                className={`p-4 xl:p-0 hover:bg-gray-50 transition-colors duration-150 ${
-                  index === preguntasFiltradas.length - 1 ? "rounded-b-lg" : ""
-                }`}
+            {/* Filtros por área, curso y nivel cognitivo */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              <select
+                value={filterArea}
+                onChange={(e) => setFilterArea(e.target.value)}
+                className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
               >
-                {/* Vista para pantallas grandes */}
-                <div className="hidden xl:grid xl:grid-cols-12 xl:items-center xl:px-6 xl:py-4">
-                  <div className="xl:col-span-2">
-                    <div className="text-sm font-medium text-gray-900">
-                      {pregunta.curso}
-                    </div>
-                  </div>
-                  <div className="xl:col-span-2">
-                    <div className="text-sm text-gray-900">{pregunta.tema}</div>
-                  </div>
-                  <div className="xl:col-span-2">
-                    <div className="text-sm text-gray-900 line-clamp-2">
-                      {pregunta.competencia.length > 80
-                        ? `${pregunta.competencia.substring(0, 80)}...`
-                        : pregunta.competencia}
-                    </div>
-                  </div>
-                  <div className="xl:col-span-1">
-                    <span className="px-2 py-1 text-xs font-semibold rounded-full bg-blue-100 text-blue-800">
-                      {pregunta.area}
-                    </span>
-                  </div>
-                  <div className="xl:col-span-1">
-                    <span
-                      className={`px-2 py-1 text-xs font-semibold rounded-full ${getNivelCognitivoColor(
-                        pregunta.nivelCognitivo
+                <option value="todas">Todas las áreas</option>
+                <option value="Biomédicas">Biomédicas</option>
+                <option value="Ingenierías">Ingenierías</option>
+                <option value="Sociales">Sociales</option>
+              </select>
+
+              <select
+                value={filterCurso}
+                onChange={(e) => setFilterCurso(e.target.value)}
+                className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+              >
+                <option value="todos">Todos los cursos</option>
+                {cursosUnicos.map((curso) => (
+                  <option key={curso} value={curso}>
+                    {curso}
+                  </option>
+                ))}
+              </select>
+
+              <select
+                value={filterNivelCognitivo}
+                onChange={(e) => setFilterNivelCognitivo(e.target.value)}
+                className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+              >
+                <option value="todos">Todos los niveles</option>
+                {nivelesCognitivosUnicos.map((nivel) => (
+                  <option key={nivel} value={nivel}>
+                    {nivel}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          {/* Estadísticas rápidas */}
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+            <div className="bg-white p-4 rounded-lg shadow border border-gray-100">
+              <div className="flex items-center">
+                <BookOpen className="h-8 w-8 text-blue-600" />
+                <div className="ml-3">
+                  <p className="text-sm font-medium text-gray-500">
+                    Preguntas del Examen
+                  </p>
+                  <p className="text-xl font-semibold text-gray-900">
+                    {preguntasFiltradas.length}
+                  </p>
+                </div>
+              </div>
+            </div>
+            <div className="bg-white p-4 rounded-lg shadow border border-gray-100">
+              <div className="flex items-center">
+                <Target className="h-8 w-8 text-green-600" />
+                <div className="ml-3">
+                  <p className="text-sm font-medium text-gray-500">Cursos</p>
+                  <p className="text-xl font-semibold text-gray-900">
+                    {filterCurso === "todos" ? cursosUnicos.length : 1}
+                  </p>
+                </div>
+              </div>
+            </div>
+            <div className="bg-white p-4 rounded-lg shadow border border-gray-100">
+              <div className="flex items-center">
+                <Calculator className="h-8 w-8 text-yellow-600" />
+                <div className="ml-3">
+                  <p className="text-sm font-medium text-gray-500">
+                    Puntaje Total
+                  </p>
+                  <p
+                    className={`text-xl font-semibold ${
+                      totalPuntaje === 100
+                        ? "text-green-600"
+                        : totalPuntaje > 100
+                        ? "text-red-600"
+                        : "text-gray-900"
+                    }`}
+                  >
+                    {totalPuntaje.toFixed(1)} / 100
+                  </p>
+                </div>
+              </div>
+            </div>
+            <div className="bg-white p-4 rounded-lg shadow border border-gray-100">
+              <div className="flex items-center">
+                <Brain className="h-8 w-8 text-purple-600" />
+                <div className="ml-3">
+                  <p className="text-sm font-medium text-gray-500">
+                    Niveles Cognitivos
+                  </p>
+                  <p className="text-xl font-semibold text-gray-900">
+                    {filterNivelCognitivo === "todos"
+                      ? nivelesCognitivosUnicos.length
+                      : 1}
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Distribución por nivel cognitivo */}
+          {estadisticasNivelCognitivo.length > 0 && (
+            <div className="mb-6 bg-white p-4 rounded-lg shadow border border-gray-100">
+              <h3 className="text-sm font-medium text-gray-900 mb-3 flex items-center">
+                <Brain className="h-4 w-4 mr-2" />
+                Distribución por Nivel Cognitivo
+              </h3>
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2">
+                {estadisticasNivelCognitivo.map(({ nivel, cantidad }) => (
+                  <div key={nivel} className="text-center">
+                    <div
+                      className={`px-2 py-1 rounded-full text-xs font-medium ${getNivelCognitivoColor(
+                        nivel
                       )}`}
                     >
-                      {pregunta.nivelCognitivo}
-                    </span>
+                      {nivel}
+                    </div>
+                    <div className="text-sm font-semibold text-gray-900 mt-1">
+                      {cantidad}
+                    </div>
                   </div>
-                  <div className="xl:col-span-1">
-                    <span
-                      className={`px-2 py-1 text-xs font-semibold rounded-full ${getPuntajeColor(
-                        pregunta.puntaje
-                      )}`}
-                    >
-                      {pregunta.puntaje} pts
-                    </span>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* ✅ Información de paginación con indicador de ordenamiento */}
+          {totalItems > 0 && (
+            <div className="mb-4 text-sm text-gray-600">
+              Página {currentPage} de {totalPages} • {totalItems} preguntas
+              encontradas • Ordenadas por curso y tema ↑
+            </div>
+          )}
+
+          {/* ✅ Paginación superior */}
+          {totalItems > 0 && (
+            <div className="mb-6">
+              <Pagination
+                currentPage={currentPage}
+                totalPages={totalPages}
+                onPageChange={goToPage}
+                onNextPage={goToNextPage}
+                onPreviousPage={goToPreviousPage}
+                onFirstPage={goToFirstPage}
+                onLastPage={goToLastPage}
+                hasNextPage={hasNextPage}
+                hasPreviousPage={hasPreviousPage}
+                startIndex={startIndex}
+                endIndex={endIndex}
+                totalItems={totalItems}
+              />
+            </div>
+          )}
+
+          {/* Lista de preguntas */}
+          <div className="bg-white shadow rounded-lg overflow-hidden border border-gray-100">
+            {paginatedPreguntas.length === 0 ? (
+              <div className="p-4 text-center text-gray-500">
+                {searchTerm ||
+                filterArea !== "todas" ||
+                filterCurso !== "todos" ||
+                filterNivelCognitivo !== "todos"
+                  ? "No se encontraron preguntas que coincidan con los filtros en este examen"
+                  : "No hay preguntas registradas para este examen"}
+              </div>
+            ) : (
+              <div className="divide-y divide-gray-200">
+                {/* Encabezado de la tabla (solo visible en pantallas grandes) */}
+                <div className="hidden xl:grid xl:grid-cols-12 bg-gray-50 px-6 py-3 rounded-t-lg">
+                  <div className="xl:col-span-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Curso ↑
                   </div>
-                  <div className="xl:col-span-3 text-right flex justify-end space-x-2">
-                    <Link
-                      to={`/preguntas/${pregunta.id}`}
-                      className="p-2 rounded-md text-blue-600 hover:bg-blue-50 transition-colors duration-200"
-                      title="Editar pregunta"
-                    >
-                      <Edit size={18} />
-                    </Link>
-                    <button
-                      onClick={() => handleDeleteClick(pregunta)}
-                      className="p-2 rounded-md text-red-600 hover:bg-red-50 transition-colors duration-200"
-                      title="Eliminar pregunta"
-                    >
-                      <Trash2 size={18} />
-                    </button>
+                  <div className="xl:col-span-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Tema ↑
+                  </div>
+                  <div className="xl:col-span-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Competencia
+                  </div>
+                  <div className="xl:col-span-1 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Área
+                  </div>
+                  <div className="xl:col-span-1 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Nivel Cognitivo
+                  </div>
+                  <div className="xl:col-span-1 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Puntaje
+                  </div>
+                  <div className="xl:col-span-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Acciones
                   </div>
                 </div>
 
-                {/* Vista para pantallas pequeñas y medianas */}
-                <div className="xl:hidden">
-                  <div className="flex items-center justify-between mb-2">
-                    <div>
-                      <div className="font-medium text-gray-900">
-                        {pregunta.curso}
+                {/* ✅ Filas de preguntas paginadas */}
+                {paginatedPreguntas.map((pregunta, index) => (
+                  <div
+                    key={pregunta.id}
+                    className={`p-4 xl:p-0 hover:bg-gray-50 transition-colors duration-150 ${
+                      index === paginatedPreguntas.length - 1
+                        ? "rounded-b-lg"
+                        : ""
+                    }`}
+                  >
+                    {/* Vista para pantallas grandes */}
+                    <div className="hidden xl:grid xl:grid-cols-12 xl:items-center xl:px-6 xl:py-4">
+                      <div className="xl:col-span-2">
+                        <div className="text-sm font-medium text-gray-900">
+                          {pregunta.curso}
+                        </div>
                       </div>
-                      <div className="text-sm text-gray-600">
-                        {pregunta.tema}
+                      <div className="xl:col-span-2">
+                        <div className="text-sm text-gray-900">
+                          {pregunta.tema}
+                        </div>
+                      </div>
+                      <div className="xl:col-span-2">
+                        <div className="text-sm text-gray-900 line-clamp-2">
+                          {pregunta.competencia.length > 80
+                            ? `${pregunta.competencia.substring(0, 80)}...`
+                            : pregunta.competencia}
+                        </div>
+                      </div>
+                      <div className="xl:col-span-1">
+                        <span className="px-2 py-1 text-xs font-semibold rounded-full bg-blue-100 text-blue-800">
+                          {pregunta.area}
+                        </span>
+                      </div>
+                      <div className="xl:col-span-1">
+                        <span
+                          className={`px-2 py-1 text-xs font-semibold rounded-full ${getNivelCognitivoColor(
+                            pregunta.nivelCognitivo
+                          )}`}
+                        >
+                          {pregunta.nivelCognitivo}
+                        </span>
+                      </div>
+                      <div className="xl:col-span-1">
+                        <span
+                          className={`px-2 py-1 text-xs font-semibold rounded-full ${getPuntajeColor(
+                            pregunta.puntaje
+                          )}`}
+                        >
+                          {pregunta.puntaje} pts
+                        </span>
+                      </div>
+                      <div className="xl:col-span-3 text-right flex justify-end space-x-2">
+                        <Link
+                          to={`/preguntas/${pregunta.id}`}
+                          className="p-2 rounded-md text-blue-600 hover:bg-blue-50 transition-colors duration-200"
+                          title="Editar pregunta"
+                        >
+                          <Edit size={18} />
+                        </Link>
+                        <button
+                          onClick={() => handleDeleteClick(pregunta)}
+                          className="p-2 rounded-md text-red-600 hover:bg-red-50 transition-colors duration-200"
+                          title="Eliminar pregunta"
+                        >
+                          <Trash2 size={18} />
+                        </button>
                       </div>
                     </div>
-                    <div className="flex space-x-1">
-                      <Link
-                        to={`/preguntas/${pregunta.id}`}
-                        className="p-2 rounded-md text-blue-600 hover:bg-blue-50 transition-colors duration-200"
-                      >
-                        <Edit size={18} />
-                      </Link>
-                      <button
-                        onClick={() => handleDeleteClick(pregunta)}
-                        className="p-2 rounded-md text-red-600 hover:bg-red-50 transition-colors duration-200"
-                      >
-                        <Trash2 size={18} />
-                      </button>
+
+                    {/* Vista para pantallas pequeñas y medianas */}
+                    <div className="xl:hidden">
+                      <div className="flex items-center justify-between mb-2">
+                        <div>
+                          <div className="font-medium text-gray-900">
+                            {pregunta.curso}
+                          </div>
+                          <div className="text-sm text-gray-600">
+                            {pregunta.tema}
+                          </div>
+                        </div>
+                        <div className="flex space-x-1">
+                          <Link
+                            to={`/preguntas/${pregunta.id}`}
+                            className="p-2 rounded-md text-blue-600 hover:bg-blue-50 transition-colors duration-200"
+                          >
+                            <Edit size={18} />
+                          </Link>
+                          <button
+                            onClick={() => handleDeleteClick(pregunta)}
+                            className="p-2 rounded-md text-red-600 hover:bg-red-50 transition-colors duration-200"
+                          >
+                            <Trash2 size={18} />
+                          </button>
+                        </div>
+                      </div>
+                      <div className="mb-2">
+                        <div className="text-sm text-gray-700 line-clamp-2">
+                          {pregunta.competencia.length > 80
+                            ? `${pregunta.competencia.substring(0, 80)}...`
+                            : pregunta.competencia}
+                        </div>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <div className="flex space-x-2 flex-wrap">
+                          <span className="px-2 py-1 text-xs font-semibold rounded-full bg-blue-100 text-blue-800">
+                            {pregunta.area}
+                          </span>
+                          <span
+                            className={`px-2 py-1 text-xs font-semibold rounded-full ${getNivelCognitivoColor(
+                              pregunta.nivelCognitivo
+                            )}`}
+                          >
+                            {pregunta.nivelCognitivo}
+                          </span>
+                          <span
+                            className={`px-2 py-1 text-xs font-semibold rounded-full ${getPuntajeColor(
+                              pregunta.puntaje
+                            )}`}
+                          >
+                            {pregunta.puntaje} pts
+                          </span>
+                        </div>
+                        <div className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded-md">
+                          {pregunta.createdAt
+                            ? new Date(pregunta.createdAt).toLocaleDateString()
+                            : "N/A"}
+                        </div>
+                      </div>
                     </div>
                   </div>
-                  <div className="mb-2">
-                    <div className="text-sm text-gray-700 line-clamp-2">
-                      {pregunta.competencia.length > 80
-                        ? `${pregunta.competencia.substring(0, 80)}...`
-                        : pregunta.competencia}
-                    </div>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <div className="flex space-x-2 flex-wrap">
-                      <span className="px-2 py-1 text-xs font-semibold rounded-full bg-blue-100 text-blue-800">
-                        {pregunta.area}
-                      </span>
-                      <span
-                        className={`px-2 py-1 text-xs font-semibold rounded-full ${getNivelCognitivoColor(
-                          pregunta.nivelCognitivo
-                        )}`}
-                      >
-                        {pregunta.nivelCognitivo}
-                      </span>
-                      <span
-                        className={`px-2 py-1 text-xs font-semibold rounded-full ${getPuntajeColor(
-                          pregunta.puntaje
-                        )}`}
-                      >
-                        {pregunta.puntaje} pts
-                      </span>
-                    </div>
-                    <div className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded-md">
-                      {pregunta.createdAt
-                        ? new Date(pregunta.createdAt).toLocaleDateString()
-                        : "N/A"}
-                    </div>
-                  </div>
-                </div>
+                ))}
               </div>
-            ))}
+            )}
           </div>
-        )}
-      </div>
+
+          {/* ✅ Paginación inferior */}
+          {totalItems > 0 && (
+            <div className="mt-6">
+              <Pagination
+                currentPage={currentPage}
+                totalPages={totalPages}
+                onPageChange={goToPage}
+                onNextPage={goToNextPage}
+                onPreviousPage={goToPreviousPage}
+                onFirstPage={goToFirstPage}
+                onLastPage={goToLastPage}
+                hasNextPage={hasNextPage}
+                hasPreviousPage={hasPreviousPage}
+                startIndex={startIndex}
+                endIndex={endIndex}
+                totalItems={totalItems}
+              />
+            </div>
+          )}
+        </>
+      )}
 
       {/* Modal de confirmación de eliminación */}
       {preguntaToDelete && (
