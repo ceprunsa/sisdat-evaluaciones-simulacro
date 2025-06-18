@@ -15,7 +15,7 @@ const Logo = ({ className = "h-12 w-auto", showText = true }: LogoProps) => {
       />
       {showText && (
         <span className="mt-2 text-lg font-semibold text-[#1A2855]">
-          Aplicación-base
+          SisDat-Examenes Simulacro
         </span>
       )}
     </div>
